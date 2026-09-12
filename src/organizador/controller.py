@@ -14,6 +14,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
+from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
@@ -36,7 +37,7 @@ from organizador.models import (
     ReconciliationFinding,
     Subject,
 )
-from organizador.paths import normalise_path_key
+from organizador.paths import normalise_path_key, resolve_contained
 from organizador.reconcile import (
     adopt_untracked_subject_file,
     dismiss_finding,
@@ -99,6 +100,7 @@ class _IngestJob:
     generation: int
     path: Path
     expected: ExistingDownload | None
+    external: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -681,6 +683,70 @@ class AppController(QObject):
             lambda: self.filer.ingest(path, expected=snapshot) if snapshot is not None else None,
         )
 
+    def organize_external_paths(self, paths: object) -> None:
+        """Ingest files chosen through the Explorer context menu."""
+
+        if self._shutting_down or not isinstance(paths, (list, tuple)):
+            return
+        if self._update_installing:
+            self.tray.notify(
+                _("Atualização em curso"),
+                _("Tenta organizar o ficheiro quando a atualização terminar."),
+            )
+            return
+        refused = False
+        accepted: list[Path] = []
+        seen: set[str] = set()
+        for raw in paths:
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            candidate = self._external_candidate(Path(raw))
+            if candidate is None:
+                refused = True
+                continue
+            key = normalise_path_key(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            accepted.append(candidate)
+        for path in accepted:
+            job = _IngestJob(
+                generation=self._watcher_generation, path=path, expected=None, external=True
+            )
+            submitted = self._submit_transfer(
+                "ingest", job, partial(self.filer.ingest_external, path)
+            )
+            if not submitted:
+                refused = True
+        if refused:
+            self.tray.notify(
+                _("Não foi possível recolher o ficheiro"),
+                _(
+                    "Este ficheiro não pode ser recolhido. Confirma que não está já "
+                    "na Universidade e que a extensão é aceite."
+                ),
+            )
+
+    def _external_candidate(self, path: Path) -> Path | None:
+        """Validate one Explorer selection without touching the file."""
+
+        try:
+            candidate = path.absolute()
+        except OSError:
+            return None
+        if not candidate.is_file() or not self.config.accepts(candidate):
+            return None
+        snapshot = ExistingDownload.capture(candidate)
+        if snapshot is None or snapshot.size < self.config.minimum_file_size:
+            return None
+        for root in (self.config.university_root, self.config.data_dir):
+            try:
+                resolve_contained(candidate, root)
+            except OSError:
+                continue
+            return None
+        return candidate
+
     def _release_deferred_downloads(self) -> None:
         """Reconsider arrivals that update preparation put on hold."""
 
@@ -709,14 +775,14 @@ class AppController(QObject):
         if error is not None:
             LOGGER.warning("Could not ingest %s: %s", job.path, error)
             self.tray.notify(_("Não foi possível recolher o ficheiro"), error)
-            if self.watcher is not None:
+            if not job.external and self.watcher is not None:
                 self.watcher.requeue(job.path)
             return
         if item is None:
-            if self.watcher is not None and job.path.exists():
+            if not job.external and self.watcher is not None and job.path.exists():
                 self.watcher.requeue(job.path)
             return
-        self._queue_ingested_item(item, notify=True)
+        self._queue_ingested_item(item, notify=not job.external)
 
     def _manual_import_delivered(self) -> None:
         """Account one finished manual ingest and summarize when the batch lands."""
@@ -764,7 +830,9 @@ class AppController(QObject):
         self.tray.notify(_("Novo material na Caixa de Entrada"), message)
 
     def _prepare_windows_integration(self) -> None:
-        self.windows_integration_ready.emit(bool(refresh_windows_integration()))
+        self.windows_integration_ready.emit(
+            bool(refresh_windows_integration(self.config.allowed_extensions))
+        )
 
     def _set_native_notifications(self, ready: bool) -> None:
         self._native_notifications = ready
@@ -1200,7 +1268,7 @@ class AppController(QObject):
             watcher=watcher,
             unpause=observing and not was_paused,
         )
-        self._submit_transfer("return", job, lambda: self.filer.return_to_downloads(inbox_id))
+        self._submit_transfer("return", job, lambda: self.filer.return_to_origin(inbox_id))
 
     def _finish_returned(self, job: _ReturnJob, result: object, error: str | None) -> None:
         self._return_in_flight.discard(job.inbox_id)
@@ -1240,7 +1308,9 @@ class AppController(QObject):
             return
         self.tray.notify(
             _("Ficheiro devolvido"),
-            _("{name} voltou para Downloads.").format(name=destination.name),
+            _("{name} voltou para {folder}.").format(
+                name=destination.name, folder=destination.parent.name
+            ),
         )
         self._refresh()
         QTimer.singleShot(120, self._show_next_prompt)
@@ -1618,6 +1688,8 @@ class AppController(QObject):
         application = QApplication.instance()
         if isinstance(application, QApplication):
             apply_theme(application, get_theme(self.config.theme))
+        with suppress(Exception):
+            refresh_windows_integration(self.config.allowed_extensions)
         self._restart_watcher()
         self.main_window.settings_page.load_config(self.config)
         self.main_window.settings_page.set_status(_("Definições guardadas."))

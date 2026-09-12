@@ -2,6 +2,22 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.14.1 - 2026-09-12
+
+### Added
+
+- Explorer context menu: "Organizar com Organizador" appears for the file types
+  configured in the app (current-user SystemFileAssociations) and hands the
+  selected file to the running instance. Entries are re-synced on startup,
+  settings changes and uninstall, and never touch other programs' verbs.
+- Files organized from Explorer return to the folder they came from when you
+  choose "Devolver", instead of always going to Downloads.
+
+### Changed
+
+- Move-failure messages now name the folder where the file stayed instead of
+  always saying Downloads.
+
 ## 0.14.0 - 2026-09-12
 
 ### Added

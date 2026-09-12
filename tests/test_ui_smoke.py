@@ -994,7 +994,7 @@ def test_return_ignores_a_second_request_while_in_flight(
         calls = 0
         started = threading.Event()
         release = threading.Event()
-        real_return = controller.filer.return_to_downloads
+        real_return = controller.filer.return_to_origin
 
         def slow_return(inbox_id: int) -> Path:
             nonlocal calls
@@ -1003,7 +1003,7 @@ def test_return_ignores_a_second_request_while_in_flight(
             assert release.wait(10.0)
             return real_return(inbox_id)
 
-        monkeypatch.setattr(controller.filer, "return_to_downloads", slow_return)
+        monkeypatch.setattr(controller.filer, "return_to_origin", slow_return)
         controller._return_item(item.id)
         assert started.wait(5.0)
         controller._return_item(item.id)
@@ -1013,6 +1013,69 @@ def test_return_ignores_a_second_request_while_in_flight(
 
         assert calls == 1
         assert (app_config.downloads_dir / "devolver.pdf").is_file()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_external_file_can_be_organized_and_returned(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del subject
+    origin = tmp_path / "Secretaria"
+    origin.mkdir()
+    source = origin / "apontamento.pdf"
+    source.write_bytes(b"external note content " * 8)
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        controller.organize_external_paths([str(source)])
+        _pump_until(qt_app, lambda: controller.prompt.current_item_id is not None)
+
+        inbox_id = controller.prompt.current_item_id
+        assert inbox_id is not None
+        item = controller.database.get_inbox_item(inbox_id)
+        assert item is not None
+        assert item.path.parent == app_config.inbox_dir
+        assert item.original_path == source
+        assert not source.exists()
+
+        controller.prompt.timer.stop()
+        controller.prompt.hide()
+        controller._return_item(inbox_id)
+        _pump_until(qt_app, lambda: any(args[0] == "Ficheiro devolvido" for args, _ in notices))
+
+        assert source.read_bytes() == b"external note content " * 8
+    finally:
+        controller.prompt.timer.stop()
+        controller.prompt.hide()
+        _close_controller(qt_app, controller)
+
+
+def test_external_organize_refuses_managed_and_unaccepted_files(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        managed = app_config.university_root / subject.folder_name / "Manual.pdf"
+        managed.parent.mkdir(parents=True, exist_ok=True)
+        managed.write_bytes(b"already filed material " * 8)
+        alien = tmp_path / "arquivo.zip"
+        alien.write_bytes(b"not a study document " * 8)
+
+        controller.organize_external_paths([str(managed), str(alien)])
+
+        assert controller._pending_transfers == 0
+        assert controller.prompt.current_item_id is None
+        assert managed.is_file()
+        assert alien.is_file()
+        assert any(args[0] == "Não foi possível recolher o ficheiro" for args, _ in notices)
     finally:
         _close_controller(qt_app, controller)
 

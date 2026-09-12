@@ -8,7 +8,7 @@ import hashlib
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
 
@@ -37,6 +37,7 @@ class SingleInstance(QObject):
 
     show_requested = Signal()
     notification_requested = Signal(str)
+    organize_requested = Signal(list)
 
     def __init__(self, data_dir: Path) -> None:
         super().__init__()
@@ -46,13 +47,22 @@ class SingleInstance(QObject):
         self.server.newConnection.connect(self._receive)
         self._activation_handler: Callable[[str], None] | None = None
         self._queued_activations: list[str] = []
+        self._organize_handler: Callable[[list[str]], None] | None = None
+        self._queued_organize: list[list[str]] = []
         self.notification_requested.connect(self._dispatch_notification)
+        self.organize_requested.connect(self._dispatch_organize)
 
     def _dispatch_notification(self, uri: str) -> None:
         if self._activation_handler is None:
             self._queued_activations.append(uri)
         else:
             self._activation_handler(uri)
+
+    def _dispatch_organize(self, paths: list[str]) -> None:
+        if self._organize_handler is None:
+            self._queued_organize.append(paths)
+        else:
+            self._organize_handler(paths)
 
     def set_notification_handler(self, handler: Callable[[str], None]) -> None:
         """Hold activations received during startup until the catalog is ready."""
@@ -61,17 +71,24 @@ class SingleInstance(QObject):
         for uri in queued:
             QTimer.singleShot(0, lambda value=uri: handler(value))
 
-    def acquire(self, notification_uri: str | None = None) -> bool:
+    def set_organize_handler(self, handler: Callable[[list[str]], None]) -> None:
+        """Deliver Explorer selections received during startup once ready."""
+        self._organize_handler = handler
+        queued, self._queued_organize = self._queued_organize, []
+        for paths in queued:
+            QTimer.singleShot(0, lambda value=paths: handler(value))
+
+    def acquire(
+        self,
+        notification_uri: str | None = None,
+        organize_paths: Sequence[str] | None = None,
+    ) -> bool:
         """Listen for future launches or ask an existing process to show itself."""
 
         probe = QLocalSocket()
         probe.connectToServer(self.name)
         if probe.waitForConnected(250):
-            message = (
-                json.dumps({"notification": notification_uri}).encode("utf-8")
-                if notification_uri is not None
-                else b"show"
-            )
+            message = self._activation_payload(notification_uri, organize_paths)
             probe.write(message)
             probe.flush()
             probe.waitForBytesWritten(250)
@@ -84,6 +101,20 @@ class SingleInstance(QObject):
             return False
         QLocalServer.removeServer(self.name)
         return self.server.listen(self.name)
+
+    @staticmethod
+    def _activation_payload(
+        notification_uri: str | None,
+        organize_paths: Sequence[str] | None,
+    ) -> bytes:
+        data: dict[str, object] = {}
+        if notification_uri is not None:
+            data["notification"] = notification_uri
+        if organize_paths:
+            data["organize"] = [str(path) for path in organize_paths if path]
+        if not data:
+            return b"show"
+        return json.dumps(data).encode("utf-8")
 
     def _receive(self) -> None:
         while self.server.hasPendingConnections():
@@ -102,11 +133,18 @@ class SingleInstance(QObject):
             elif len(payload) <= 4096:
                 try:
                     data = json.loads(payload)
-                    uri = data.get("notification") if isinstance(data, dict) else None
                 except (ValueError, UnicodeError):
                     continue
+                if not isinstance(data, dict):
+                    continue
+                uri = data.get("notification")
                 if isinstance(uri, str) and notification_token(uri) is not None:
                     self.notification_requested.emit(uri)
+                raw_paths = data.get("organize")
+                if isinstance(raw_paths, list):
+                    paths = [item for item in raw_paths if isinstance(item, str) and item][:32]
+                    if paths:
+                        self.organize_requested.emit(paths)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -117,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--background", action="store_true", help="Arrancar apenas no tabuleiro do sistema"
     )
     parser.add_argument("--notification-uri", help=argparse.SUPPRESS)
+    parser.add_argument("--organize", action="append", help=argparse.SUPPRESS)
     parser.add_argument("--register-integration", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--unregister-integration", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
@@ -200,7 +239,8 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.unregister_integration:
             unregister_windows_integration()
             return 0
-        return 0 if refresh_windows_integration() else 1
+        config, _error = load_config_safely(arguments.data_dir or default_data_dir())
+        return 0 if refresh_windows_integration(config.allowed_extensions) else 1
     target_data_dir = arguments.data_dir or default_data_dir()
     sys.excepthook = log_uncaught_exception
     _set_app_user_model_id()
@@ -252,11 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     instance = SingleInstance(target_data_dir)
     acquired = True
     if not arguments.smoke_test:
-        acquired = (
-            instance.acquire(arguments.notification_uri)
-            if arguments.notification_uri
-            else instance.acquire()
-        )
+        acquired = instance.acquire(arguments.notification_uri, arguments.organize)
     if not acquired:
         return 0
 
@@ -349,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     instance.show_requested.connect(controller.show_main)
     instance.set_notification_handler(controller.activate_notification)
+    instance.set_organize_handler(controller.organize_external_paths)
     if install_instance is not None:
         install_instance.show_requested.connect(controller.show_main)
         install_instance.set_notification_handler(controller.activate_notification)
@@ -393,7 +430,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         controller.start(
-            background=arguments.background or bool(arguments.notification_uri),
+            background=(
+                arguments.background or bool(arguments.notification_uri) or bool(arguments.organize)
+            ),
             smoke_test=arguments.smoke_test,
         )
     except Exception as exc:
@@ -430,6 +469,9 @@ def main(argv: list[str] | None = None) -> int:
         coordinator.prune_healthy_backups()
     if arguments.smoke_test:
         QTimer.singleShot(900, controller.shutdown)
+    elif arguments.organize:
+        selected = list(arguments.organize)
+        QTimer.singleShot(0, lambda: controller.organize_external_paths(selected))
     elif arguments.notification_uri:
         QTimer.singleShot(0, lambda: controller.activate_notification(arguments.notification_uri))
     exit_code = application.exec()

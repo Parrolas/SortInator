@@ -195,10 +195,69 @@ def test_non_university_file_returns_without_overwrite(
     assert item is not None
     (app_config.downloads_dir / "fatura.pdf").write_bytes(b"newer file")
 
-    destination = filer.return_to_downloads(item.id)
+    destination = filer.return_to_origin(item.id)
 
     assert destination.name == "fatura (2).pdf"
     assert destination.exists()
+
+
+def test_ingest_external_moves_a_file_from_anywhere(
+    app_config: AppConfig, filer: FilingService, tmp_path: Path
+) -> None:
+    source = tmp_path / "Desktop" / "externa.pdf"
+    source.parent.mkdir()
+    source.write_bytes(b"external study material " * 8)
+
+    item = filer.ingest_external(source)
+
+    assert item is not None
+    assert item.path.parent == app_config.inbox_dir
+    assert item.original_path == source
+    assert not source.exists()
+
+
+def test_ingest_external_refuses_unaccepted_types(
+    app_config: AppConfig, filer: FilingService, tmp_path: Path
+) -> None:
+    del app_config
+    source = tmp_path / "arquivo.zip"
+    source.write_bytes(b"not a study document " * 8)
+
+    assert filer.ingest_external(source) is None
+    assert source.exists()
+
+
+def test_external_item_returns_to_its_original_folder(
+    app_config: AppConfig, filer: FilingService, tmp_path: Path
+) -> None:
+    del app_config
+    origin = tmp_path / "Documentos"
+    origin.mkdir()
+    source = origin / "apontamento.pdf"
+    source.write_bytes(b"external notes " * 12)
+    item = filer.ingest_external(source)
+    assert item is not None
+
+    destination = filer.return_to_origin(item.id)
+
+    assert destination.parent == origin
+    assert destination.read_bytes() == b"external notes " * 12
+
+
+def test_return_falls_back_to_downloads_when_origin_disappeared(
+    app_config: AppConfig, filer: FilingService, tmp_path: Path
+) -> None:
+    origin = tmp_path / "Efemera"
+    origin.mkdir()
+    source = origin / "nota.pdf"
+    source.write_bytes(b"transient notes " * 10)
+    item = filer.ingest_external(source)
+    assert item is not None
+    origin.rmdir()
+
+    destination = filer.return_to_origin(item.id)
+
+    assert destination.parent == app_config.downloads_dir
 
 
 def test_undo_restores_latest_document_to_inbox(

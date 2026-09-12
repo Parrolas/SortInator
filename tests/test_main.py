@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -128,6 +130,36 @@ def test_single_instance_blocks_a_second_copy_of_the_same_data(
     finally:
         first.server.close()
         elsewhere.server.close()
+
+
+def test_single_instance_forwards_explorer_selection(qt_app: QApplication, tmp_path: Path) -> None:
+    first = SingleInstance(tmp_path)
+    selections: list[list[str]] = []
+    first.organize_requested.connect(selections.append)
+    first.show_requested.connect(lambda: selections.append(["show"]))
+    selected = [str(tmp_path / "aula.pdf"), str(tmp_path / "ficha.pdf")]
+    try:
+        assert first.acquire()
+        results: list[bool] = []
+
+        def send() -> None:
+            second = SingleInstance(tmp_path)
+            results.append(second.acquire(None, selected))
+
+        worker = threading.Thread(target=send)
+        worker.start()
+        deadline = time.monotonic() + 2
+        while not selections and time.monotonic() < deadline:
+            qt_app.processEvents()
+        assert selections == [selected]
+        worker.join(3)
+        assert results == [False]
+        delivered: list[list[str]] = []
+        first.set_organize_handler(delivered.append)
+        qt_app.processEvents()
+        assert delivered == [selected]
+    finally:
+        first.server.close()
 
 
 def test_reload_config_after_restore_picks_up_rewritten_settings(

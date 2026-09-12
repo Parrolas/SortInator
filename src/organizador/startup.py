@@ -1,14 +1,18 @@
-"""Current-user Windows login startup registration and Start Menu presence."""
+"""Current-user Windows login startup, Start Menu and Explorer registration."""
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
+from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 
 from organizador import __version__
+from organizador.config import DEFAULT_EXTENSIONS
+from organizador.i18n import _
 from organizador.windows_shell import UNINSTALL_KEY, create_shortcut, shortcut_target
 
 try:
@@ -21,6 +25,9 @@ LOGGER = logging.getLogger(__name__)
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "Organizador"
 SHORTCUT_NAME = "Organizador.lnk"
+MENU_VERB = "Organizador"
+MENU_ROOT = r"Software\Classes\SystemFileAssociations"
+_MENU_EXTENSION = re.compile(r"^\.[A-Za-z0-9][A-Za-z0-9._-]{0,40}$")
 
 
 def startup_command() -> str:
@@ -84,16 +91,17 @@ def refresh_launch_at_login() -> bool:
     return True
 
 
-def refresh_windows_integration() -> bool:
-    """Refresh the login entry and Start Menu shortcut for this installation."""
+def refresh_windows_integration(allowed_extensions: Iterable[str] | None = None) -> bool:
+    """Refresh the login entry, Start Menu shortcut and Explorer menu."""
 
     if os.environ.get("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION") == "1":
         return False
     refresh_launch_at_login()
     shortcut_ready = ensure_start_menu_shortcut()
     protocol_ready = register_notification_protocol()
+    menu_ready = register_file_context_menu(allowed_extensions or DEFAULT_EXTENSIONS)
     refresh_installed_version()
-    return shortcut_ready and protocol_ready
+    return shortcut_ready and protocol_ready and menu_ready
 
 
 def start_menu_shortcut_path(programs_dir: Path | None = None) -> Path:
@@ -142,6 +150,98 @@ def register_notification_protocol() -> bool:
     return True
 
 
+def context_menu_command() -> str:
+    """Return the Explorer command that hands one file to this installation."""
+
+    return f'"{Path(sys.executable)}" --organize "%1"'
+
+
+def _menu_extension_verb_path(extension: str) -> str:
+    return rf"{MENU_ROOT}\{extension}\shell\{MENU_VERB}"
+
+
+def _safe_menu_extension(extension: str) -> bool:
+    """Reject extension names that could escape their registry key."""
+
+    return bool(_MENU_EXTENSION.match(extension))
+
+
+def register_file_context_menu(allowed_extensions: Iterable[str]) -> bool:
+    """Publish one Explorer verb for each accepted extension and prune old ones."""
+
+    if not getattr(sys, "frozen", False) or winreg is None:
+        return False
+    command = context_menu_command()
+    icon = f'"{Path(sys.executable)}",0'
+    desired: set[str] = set()
+    for raw in allowed_extensions:
+        extension = str(raw).strip().casefold()
+        if _safe_menu_extension(extension):
+            desired.add(extension)
+    ready = True
+    for extension in sorted(desired):
+        try:
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension)
+            ) as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, _("Organizar com Organizador"))
+                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon)
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension) + r"\command"
+            ) as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        except OSError:
+            LOGGER.warning("Could not register the Explorer entry for %s", extension, exc_info=True)
+            ready = False
+    for extension in _registered_menu_extensions(command) - desired:
+        _remove_menu_extension(extension, command)
+    return ready
+
+
+def _registered_menu_extensions(command: str) -> set[str]:
+    """Return extensions whose Organizador verb still points at this executable."""
+
+    found: set[str] = set()
+    if winreg is None:
+        return found
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, MENU_ROOT) as root:
+            index = 0
+            while True:
+                try:
+                    extension = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+                if extension.startswith(".") and _menu_command(extension) == command:
+                    found.add(extension)
+    except OSError:
+        return found
+    return found
+
+
+def _menu_command(extension: str) -> str | None:
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension) + r"\command"
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "")
+    except OSError:
+        return None
+    return str(value)
+
+
+def _remove_menu_extension(extension: str, command: str) -> None:
+    if _menu_command(extension) != command:
+        return
+    with suppress(OSError):
+        winreg.DeleteKey(
+            winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension) + r"\command"
+        )
+    with suppress(OSError):
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension))
+
+
 def refresh_installed_version() -> None:
     """Update metadata only when the uninstaller owns this exact runtime folder."""
     if not getattr(sys, "frozen", False) or winreg is None:
@@ -181,6 +281,9 @@ def unregister_windows_integration() -> None:
                 from organizador.windows_shell import AUMID
 
                 ToastNotificationManager.history.clear_with_id(AUMID)
+    menu_command = context_menu_command()
+    for extension in _registered_menu_extensions(menu_command):
+        _remove_menu_extension(extension, menu_command)
     shortcut = start_menu_shortcut_path()
     with suppress(Exception):
         if shortcut_target(shortcut).resolve() == Path(sys.executable).resolve():

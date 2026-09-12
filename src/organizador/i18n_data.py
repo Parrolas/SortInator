@@ -330,6 +330,8 @@ EN_STRINGS: dict[str, str] = {
     "Organizar seleção ({count})": "Organize selection ({count})",
     "Organizar {count} ficheiro": "Organize {count} file",
     "Organizar {count} ficheiros": "Organize {count} files",
+    "Organizar com Organizador": "Organize with Organizador",
+    "Atualização em curso": "Update in progress",
     "A organizar {count} ficheiro…": "Organizing {count} file…",
     "A organizar {count} ficheiros…": "Organizing {count} files…",
     "Já existe uma organização em curso; espera que termine.": (
@@ -563,7 +565,7 @@ EN_STRINGS: dict[str, str] = {
     "{name} volta a aparecer nas escolhas de arquivo. Os ficheiros e tarefas não foram alterados.": (
         "{name} appears again in filing choices. Files and tasks were not changed."
     ),
-    "{name} voltou para Downloads.": "{name} went back to Downloads.",
+    "{name} voltou para {folder}.": "{name} went back to {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} returned to the Inbox.",
     "{size}  ·  recebido da pasta Downloads": "{size}  ·  received from the Downloads folder",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
@@ -706,18 +708,22 @@ EN_STRINGS: dict[str, str] = {
         "Could not read the configured Downloads folder."
     ),
     "Já não foi possível encontrar {name}.": "Could no longer find {name}.",
-    "{name} ficou em Downloads, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
-        "{name} stayed in Downloads, but an incomplete copy may have been left at "
+    "{name} ficou em {origin}, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
+        "{name} stayed in {origin}, but an incomplete copy may have been left at "
         "{leftover}. Compare the files before removing it."
     ),
-    "{name} mudou ou ainda está a ser usado e ficou em Downloads.": (
-        "{name} changed or is still in use and stayed in Downloads."
+    "{name} mudou ou ainda está a ser usado e ficou em {origin}.": (
+        "{name} changed or is still in use and stayed in {origin}."
     ),
     "Não foi possível registar {name}. O ficheiro ficou em {destination}.": (
         "Could not register {name}. The file stayed at {destination}."
     ),
-    "Não foi possível registar {name}; foi devolvido a Downloads como {returned}.": (
-        "Could not register {name}; it was returned to Downloads as {returned}."
+    "Não foi possível registar {name}; foi devolvido a {origin} como {returned}.": (
+        "Could not register {name}; it was returned to {origin} as {returned}."
+    ),
+    "Este ficheiro não pode ser recolhido. Confirma que não está já na Universidade e que a extensão é aceite.": (
+        "This file cannot be collected. Check that it is not already in the "
+        "university folder and that its extension is accepted."
     ),
     "Este ficheiro já não está na Caixa de Entrada.": "This file is no longer in the Inbox.",
     "Escolhe uma disciplina ativa.": "Choose an active subject.",
@@ -776,6 +782,9 @@ EN_STRINGS: dict[str, str] = {
         "Indexing failed — the file is still searchable by name."
     ),
     "Reindexar": "Reindex",
+    "Tenta organizar o ficheiro quando a atualização terminar.": (
+        "Try organizing the file once the update finishes."
+    ),
     "Tentar novamente": "Retry",
     "{count} documentos por indexar": "{count} documents pending indexing",
     "1 documento por indexar": "1 document pending indexing",
@@ -1119,6 +1128,8 @@ ES_STRINGS: dict[str, str] = {
     "Organizar seleção ({count})": "Organizar selección ({count})",
     "Organizar {count} ficheiro": "Organizar {count} archivo",
     "Organizar {count} ficheiros": "Organizar {count} archivos",
+    "Organizar com Organizador": "Organizar con Organizador",
+    "Atualização em curso": "Actualización en curso",
     "A organizar {count} ficheiro…": "Organizando {count} archivo…",
     "A organizar {count} ficheiros…": "Organizando {count} archivos…",
     "Já existe uma organização em curso; espera que termine.": (
@@ -1366,7 +1377,7 @@ ES_STRINGS: dict[str, str] = {
     "{name} volta a aparecer nas escolhas de arquivo. Os ficheiros e tarefas não foram alterados.": (
         "{name} vuelve a aparecer en las opciones de archivo. Los archivos y tareas no fueron alterados."
     ),
-    "{name} voltou para Downloads.": "{name} volvió a Descargas.",
+    "{name} voltou para {folder}.": "{name} volvió a {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} volvió a la Bandeja de Entrada.",
     "{size}  ·  recebido da pasta Downloads": "{size}  ·  recibido de la carpeta Descargas",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
@@ -1524,18 +1535,22 @@ ES_STRINGS: dict[str, str] = {
         "No se pudo leer la carpeta de Descargas configurada."
     ),
     "Já não foi possível encontrar {name}.": "Ya no se pudo encontrar {name}.",
-    "{name} ficou em Downloads, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
-        "{name} se quedó en Descargas, pero es posible que haya una copia incompleta en "
+    "{name} ficou em {origin}, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
+        "{name} se quedó en {origin}, pero es posible que haya una copia incompleta en "
         "{leftover}. Compara los archivos antes de eliminarla."
     ),
-    "{name} mudou ou ainda está a ser usado e ficou em Downloads.": (
-        "{name} cambió o sigue en uso y se quedó en Descargas."
+    "{name} mudou ou ainda está a ser usado e ficou em {origin}.": (
+        "{name} cambió o sigue en uso y se quedó en {origin}."
     ),
     "Não foi possível registar {name}. O ficheiro ficou em {destination}.": (
         "No se pudo registrar {name}. El archivo se quedó en {destination}."
     ),
-    "Não foi possível registar {name}; foi devolvido a Downloads como {returned}.": (
-        "No se pudo registrar {name}; se devolvió a Descargas como {returned}."
+    "Não foi possível registar {name}; foi devolvido a {origin} como {returned}.": (
+        "No se pudo registrar {name}; se devolvió a {origin} como {returned}."
+    ),
+    "Este ficheiro não pode ser recolhido. Confirma que não está já na Universidade e que a extensão é aceite.": (
+        "Este archivo no se puede recoger. Comprueba que no esté ya en la "
+        "Universidad y que la extensión sea aceptada."
     ),
     "Este ficheiro já não está na Caixa de Entrada.": (
         "Este archivo ya no está en la Bandeja de Entrada."
@@ -1598,6 +1613,9 @@ ES_STRINGS: dict[str, str] = {
         "La indexación falló — el archivo sigue siendo buscable por su nombre."
     ),
     "Reindexar": "Reindexar",
+    "Tenta organizar o ficheiro quando a atualização terminar.": (
+        "Intenta organizar el archivo cuando termine la actualización."
+    ),
     "Tentar novamente": "Reintentar",
     "{count} documentos por indexar": "{count} documentos pendientes de indexación",
     "1 documento por indexar": "1 documento pendiente de indexación",
@@ -1947,6 +1965,8 @@ FR_STRINGS: dict[str, str] = {
     "Organizar seleção ({count})": "Ranger la sélection ({count})",
     "Organizar {count} ficheiro": "Ranger {count} fichier",
     "Organizar {count} ficheiros": "Ranger {count} fichiers",
+    "Organizar com Organizador": "Organiser avec Organizador",
+    "Atualização em curso": "Mise à jour en cours",
     "A organizar {count} ficheiro…": "Rangement de {count} fichier…",
     "A organizar {count} ficheiros…": "Rangement de {count} fichiers…",
     "Já existe uma organização em curso; espera que termine.": (
@@ -2199,7 +2219,7 @@ FR_STRINGS: dict[str, str] = {
     "{name} volta a aparecer nas escolhas de arquivo. Os ficheiros e tarefas não foram alterados.": (
         "{name} réapparaît dans les choix de rangement. Fichiers et tâches n'ont pas été modifiés."
     ),
-    "{name} voltou para Downloads.": "{name} est retourné dans Téléchargements.",
+    "{name} voltou para {folder}.": "{name} est retourné dans {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} est revenu dans la Boîte de réception.",
     "{size}  ·  recebido da pasta Downloads": "{size}  ·  reçu du dossier Téléchargements",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
@@ -2361,19 +2381,22 @@ FR_STRINGS: dict[str, str] = {
         "Impossible de lire le dossier Téléchargements configuré."
     ),
     "Já não foi possível encontrar {name}.": "Impossible de retrouver {name}.",
-    "{name} ficou em Downloads, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
-        "{name} est resté dans Téléchargements, mais une copie incomplète se trouve "
+    "{name} ficou em {origin}, mas uma cópia incompleta pode ter ficado em {leftover}. Compara os ficheiros antes de a remover.": (
+        "{name} est resté dans {origin}, mais une copie incomplète se trouve "
         "peut-être ici : {leftover}. Compare les fichiers avant de la supprimer."
     ),
-    "{name} mudou ou ainda está a ser usado e ficou em Downloads.": (
-        "{name} a changé ou est encore utilisé et est resté dans Téléchargements."
+    "{name} mudou ou ainda está a ser usado e ficou em {origin}.": (
+        "{name} a changé ou est encore utilisé et est resté dans {origin}."
     ),
     "Não foi possível registar {name}. O ficheiro ficou em {destination}.": (
         "Impossible d'enregistrer {name}. Le fichier est resté ici : {destination}."
     ),
-    "Não foi possível registar {name}; foi devolvido a Downloads como {returned}.": (
-        "Impossible d'enregistrer {name} ; "
-        "il a été renvoyé dans Téléchargements sous le nom {returned}."
+    "Não foi possível registar {name}; foi devolvido a {origin} como {returned}.": (
+        "Impossible d'enregistrer {name} ; il a été renvoyé dans {origin} sous le nom {returned}."
+    ),
+    "Este ficheiro não pode ser recolhido. Confirma que não está já na Universidade e que a extensão é aceite.": (
+        "Ce fichier ne peut pas être récupéré. Vérifie qu'il n'est pas déjà dans "
+        "l'Université et que son extension est acceptée."
     ),
     "Este ficheiro já não está na Caixa de Entrada.": (
         "Ce fichier n'est plus dans la Boîte de réception."
@@ -2435,6 +2458,9 @@ FR_STRINGS: dict[str, str] = {
         "L'indexation a échoué — le fichier reste trouvable par son nom."
     ),
     "Reindexar": "Réindexer",
+    "Tenta organizar o ficheiro quando a atualização terminar.": (
+        "Essaie d'organiser le fichier une fois la mise à jour terminée."
+    ),
     "Tentar novamente": "Réessayer",
     "{count} documentos por indexar": "{count} documents en attente d'indexation",
     "1 documento por indexar": "1 document en attente d'indexation",

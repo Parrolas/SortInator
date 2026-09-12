@@ -188,3 +188,147 @@ def test_isolated_update_suppresses_all_machine_registration(
     monkeypatch.setenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", "1")
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: pytest.fail("registry write"))
     assert startup.refresh_windows_integration() is False
+
+
+class _FakeKeyContext:
+    def __init__(self, registry: _FakeRegistry, path: str) -> None:
+        self._registry = registry
+        self.path = path
+
+    def __enter__(self) -> _FakeKeyContext:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+class _FakeRegistry:
+    HKEY_CURRENT_USER = 2147483649
+    KEY_SET_VALUE = 2
+    REG_SZ = 1
+
+    def __init__(self) -> None:
+        self.keys: dict[str, dict[str, str]] = {startup.MENU_ROOT: {}}
+
+    def CreateKey(self, _hive: object, path: str) -> _FakeKeyContext:
+        self.keys.setdefault(path, {})
+        return _FakeKeyContext(self, path)
+
+    def OpenKey(self, _hive: object, path: str, *_rest: object) -> _FakeKeyContext:
+        if path not in self.keys:
+            raise FileNotFoundError(path)
+        return _FakeKeyContext(self, path)
+
+    def SetValueEx(
+        self, key: _FakeKeyContext, name: str, _reserved: int, _type: object, value: str
+    ) -> None:
+        self.keys[key.path][name] = value
+
+    def QueryValueEx(self, key: _FakeKeyContext, name: str) -> tuple[str, int]:
+        values = self.keys[key.path]
+        if name not in values:
+            raise FileNotFoundError(name)
+        return str(values[name]), 1
+
+    def EnumKey(self, key: _FakeKeyContext, index: int) -> str:
+        prefix = key.path + "\\"
+        children = sorted(
+            {name[len(prefix) :].split("\\", 1)[0] for name in self.keys if name.startswith(prefix)}
+        )
+        if index >= len(children):
+            raise OSError("no more data")
+        return children[index]
+
+    def DeleteKey(self, _hive: object, path: str) -> None:
+        if path not in self.keys:
+            raise FileNotFoundError(path)
+        del self.keys[path]
+
+
+def test_context_menu_command_quotes_the_selected_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(startup.sys, "executable", r"C:\Programa Files\Organizador.exe")
+
+    assert startup.context_menu_command() == '"C:\\Programa Files\\Organizador.exe" --organize "%1"'
+
+
+def test_context_menu_registers_one_verb_per_extension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
+    fake = _FakeRegistry()
+    monkeypatch.setattr(startup, "winreg", fake)
+
+    assert startup.register_file_context_menu([".PDF", ".docx", "..\\Run", "invalida"]) is True
+
+    command = startup.context_menu_command()
+    verb = f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador"
+    assert fake.keys[verb][""] == "Organizar com Organizador"
+    assert fake.keys[verb]["Icon"].endswith(",0")
+    assert fake.keys[verb + "\\command"][""] == command
+    assert f"{startup.MENU_ROOT}\\.docx\\shell\\Organizador\\command" in fake.keys
+    assert not any("Run" in path for path in fake.keys)
+    assert not any("invalida" in path for path in fake.keys)
+
+
+def test_context_menu_prunes_stale_verbs_only_when_ours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
+    fake = _FakeRegistry()
+    monkeypatch.setattr(startup, "winreg", fake)
+    command = startup.context_menu_command()
+    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador\\command"] = {"": command}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"] = {
+        "": '"outro.exe" --organize "%1"'
+    }
+
+    assert startup.register_file_context_menu([".pdf"]) is True
+
+    assert f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador" not in fake.keys
+    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador\\command" in fake.keys
+    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"][""] == (
+        '"outro.exe" --organize "%1"'
+    )
+
+
+def test_unregister_removes_only_our_explorer_verbs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
+    fake = _FakeRegistry()
+    monkeypatch.setattr(startup, "winreg", fake)
+    command = startup.context_menu_command()
+    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador\\command"] = {"": command}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"] = {
+        "": '"outro.exe" --organize "%1"'
+    }
+
+    startup.unregister_windows_integration()
+
+    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador" not in fake.keys
+    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"][""] == (
+        '"outro.exe" --organize "%1"'
+    )
+
+
+def test_refresh_windows_integration_registers_the_explorer_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: True)
+    monkeypatch.setattr(startup, "ensure_start_menu_shortcut", lambda *args, **kwargs: True)
+    monkeypatch.setattr(startup, "register_notification_protocol", lambda: True)
+    monkeypatch.setattr(
+        startup,
+        "register_file_context_menu",
+        lambda extensions: calls.append(tuple(extensions)) or True,
+    )
+
+    assert startup.refresh_windows_integration([".pdf", ".docx"]) is True
+    assert calls == [(".pdf", ".docx")]

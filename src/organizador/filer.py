@@ -138,10 +138,25 @@ class FilingService:
         """Move one completed eligible download into the university inbox."""
 
         source = source.absolute()
-        if not self.config.accepts(source) or not is_direct_child(
-            source, self.config.downloads_dir
-        ):
+        if not is_direct_child(source, self.config.downloads_dir):
             return None
+        return self._ingest(source, expected)
+
+    def ingest_external(self, source: Path) -> InboxItem | None:
+        """Move one file explicitly chosen outside Downloads into the inbox."""
+
+        return self._ingest(source.absolute(), None)
+
+    def _ingest(
+        self,
+        source: Path,
+        expected: ExistingDownload | None,
+    ) -> InboxItem | None:
+        """Move one accepted completed file into the university inbox."""
+
+        if not self.config.accepts(source):
+            return None
+        origin = source.parent.name
         current = ExistingDownload.capture(source)
         if current is None:
             if source.exists():
@@ -179,17 +194,17 @@ class FilingService:
         except IncompleteMoveError as exc:
             raise FilingError(
                 _(
-                    "{name} ficou em Downloads, mas uma cópia incompleta pode ter ficado "
+                    "{name} ficou em {origin}, mas uma cópia incompleta pode ter ficado "
                     "em {leftover}. Compara os ficheiros antes de a remover."
-                ).format(name=source.name, leftover=exc.leftover_path)
+                ).format(name=source.name, origin=origin, leftover=exc.leftover_path)
             ) from exc
         except OSError as exc:
             if source.is_file() and not destination.exists():
                 with suppress(Exception):
                     self.database.cancel_ingest(pending.id)
             raise FilingError(
-                _("{name} mudou ou ainda está a ser usado e ficou em Downloads.").format(
-                    name=source.name
+                _("{name} mudou ou ainda está a ser usado e ficou em {origin}.").format(
+                    name=source.name, origin=origin
                 )
             ) from exc
         try:
@@ -207,9 +222,11 @@ class FilingService:
             with suppress(Exception):
                 self.database.cancel_ingest(pending.id)
             returned = _(
-                "Não foi possível registar {name}; foi devolvido a Downloads como {returned}."
+                "Não foi possível registar {name}; foi devolvido a {origin} como {returned}."
             )
-            raise FilingError(returned.format(name=source.name, returned=rollback.name)) from exc
+            raise FilingError(
+                returned.format(name=source.name, origin=origin, returned=rollback.name)
+            ) from exc
         self._register_collision(collided)
         return item
 
@@ -361,14 +378,15 @@ class FilingService:
             return None
         return event
 
-    def return_to_downloads(self, inbox_id: int) -> Path:
-        """Return non-university material to Downloads without overwriting."""
+    def return_to_origin(self, inbox_id: int) -> Path:
+        """Return non-university material to the folder it came from, safely."""
 
         item = self.database.get_inbox_item(inbox_id)
         if item is None or not item.path.is_file():
             raise FilingError(_("O ficheiro já não está disponível para devolver."))
+        destination_dir = self._return_directory(item)
         destination, collided = self._plan_contained_destination(
-            self.config.downloads_dir, item.original_name, self.config.downloads_dir
+            destination_dir, item.original_name, destination_dir
         )
         try:
             pending = self.database.begin_return(inbox_id, destination)
@@ -520,6 +538,25 @@ class FilingService:
     @staticmethod
     def _name_with_original_extension(requested: str, original: str) -> str:
         return _restore_original_extension(requested, original)
+
+    def _return_directory(self, item: InboxItem) -> Path:
+        """Prefer the recorded origin folder; never return into managed roots."""
+
+        origin = item.original_path.parent
+        try:
+            resolved = origin.resolve()
+        except OSError:
+            return self.config.downloads_dir
+        if not resolved.is_dir():
+            return self.config.downloads_dir
+        for root in (self.config.university_root, self.config.data_dir):
+            try:
+                root_resolved = root.resolve()
+            except OSError:
+                continue
+            if resolved == root_resolved or root_resolved in resolved.parents:
+                return self.config.downloads_dir
+        return origin
 
     def _plan_destination(self, directory: Path, filename: str) -> tuple[Path, bool]:
         """Plan a collision-safe destination and report whether a rename was needed."""
