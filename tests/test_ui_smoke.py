@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
 )
 
-from organizador import __version__, updater
+from organizador import __version__, duplicates, updater
 from organizador.classifier import guess_filing
 from organizador.config import AppConfig
 from organizador.controller import AppController, _UndoJob
@@ -437,6 +437,105 @@ def test_filing_prompt_regenerates_name_on_subject_and_type_change(
     finally:
         prompt.timer.stop()
         prompt.hide()
+
+
+def test_filing_prompt_offers_replacement_only_on_the_matching_folder(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+) -> None:
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    folder.mkdir(parents=True, exist_ok=True)
+    old_path = folder / "Aula.pdf"
+    old_path.write_bytes(b"versao antiga do documento")
+    candidate = ExistingDownload.capture(old_path)
+    assert candidate is not None
+    old = database.adopt_subject_file(candidate, subject.id, "Slides")
+
+    inbox_path = app_config.inbox_dir / "Aula.pdf"
+    inbox_path.write_bytes(b"versao antiga do documento")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+    duplicate = duplicates.find_duplicate(database, item)
+    assert duplicate is not None
+    prompt = FilingPrompt(timeout_seconds=30)
+    try:
+        guess = guess_filing(item.original_name, [subject])
+        prompt.show_item(item, [subject], guess, duplicate=duplicate)
+        qt_app.processEvents()
+
+        assert prompt.duplicate_banner.isVisible()
+        prompt._choose_subject(subject.id, prompt.subject_group.button(subject.id))
+        prompt.type_buttons["Slides"].click()
+        qt_app.processEvents()
+        assert prompt.replace_check.isEnabled()
+
+        revealed: list[object] = []
+        prompt.reveal_requested.connect(revealed.append)
+        prompt._reveal_duplicate()
+        assert revealed == [old.current_path]
+
+        prompt.type_buttons["Testes"].click()
+        qt_app.processEvents()
+        assert not prompt.replace_check.isEnabled()
+        assert not prompt.replace_check.isChecked()
+
+        prompt.type_buttons["Slides"].click()
+        qt_app.processEvents()
+        prompt.replace_check.setChecked(True)
+        emitted: list[tuple[object, ...]] = []
+        prompt.filing_requested.connect(lambda *args: emitted.append(args))
+        prompt._confirm()
+
+        assert emitted and emitted[0][6] == old.id
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
+def test_prompt_flow_detects_an_existing_copy(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    folder.mkdir(parents=True, exist_ok=True)
+    old_path = folder / "Aula.pdf"
+    old_path.write_bytes(b"conteudo repetido para o teste")
+    candidate = ExistingDownload.capture(old_path)
+    assert candidate is not None
+    database.adopt_subject_file(candidate, subject.id, "Slides")
+
+    inbox_path = app_config.inbox_dir / "Aula.pdf"
+    inbox_path.write_bytes(b"conteudo repetido para o teste")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        controller.prompt_queue.append(item.id)
+        controller._show_next_prompt()
+        qt_app.processEvents()
+
+        assert controller.prompt.current_item_id == item.id
+        assert controller.prompt._duplicate is not None
+        assert controller.prompt._duplicate.current_path == old_path
+        assert controller.prompt.duplicate_banner.isVisible()
+    finally:
+        controller.prompt.timer.stop()
+        controller.prompt.hide()
+        _close_controller(qt_app, controller)
 
 
 def test_subject_colour_button_keeps_readable_text(qt_app: QApplication) -> None:

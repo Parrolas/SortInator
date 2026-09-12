@@ -533,6 +533,12 @@ class InboxPage(QWidget):
             FindingReason.PENDING_INGEST_DESTINATION: _(
                 "Cópia por verificar; pode estar incompleta. Compara com o original em Downloads."
             ),
+            FindingReason.PENDING_VERSION_SOURCE: _(
+                "Renomeação de versão interrompida; o original foi mantido para revisão."
+            ),
+            FindingReason.PENDING_VERSION_DESTINATION: _(
+                "Cópia da versão anterior por verificar; compara os ficheiros."
+            ),
             FindingReason.UNTRACKED_SUBJECT_FILE: _(
                 "Encontrado numa disciplina sem registo. Não foi movido nem alterado."
             ),

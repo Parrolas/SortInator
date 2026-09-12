@@ -1045,3 +1045,45 @@ def test_redirect_filing_destination_requires_the_pending_marker(
     assert stored is not None
     assert stored.current_path == event.destination_path
     assert database.list_undoable_filings() == [event]
+
+
+def test_legacy_database_gains_duplicate_columns(database: Database) -> None:
+    with database.connect() as connection:
+        connection.execute("ALTER TABLE inbox DROP COLUMN content_sha256")
+        connection.execute("ALTER TABLE files DROP COLUMN content_sha256")
+        connection.execute("ALTER TABLE events DROP COLUMN related_event_id")
+        connection.commit()
+
+    missing = database.inspect_schema().missing_additions
+    assert "inbox.content_sha256" in missing
+    assert "files.content_sha256" in missing
+    assert "events.related_event_id" in missing
+
+    database.initialize()
+
+    assert database.inspect_schema().missing_additions == ()
+
+
+def test_version_rename_lifecycle_updates_the_catalog(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    versioned = document.current_path.parent / "aula (versao anterior).txt"
+
+    event = database.begin_version_rename(file_id, versioned)
+
+    assert database.list_pending_versions() == [event]
+
+    document.current_path.replace(versioned)
+    database.complete_version_rename(event.id, versioned)
+
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.current_path == versioned
+    assert database.list_pending_versions() == []
+
+    pending = database.begin_version_rename(file_id, document.current_path.parent / "outro.txt")
+    assert database.cancel_version_rename(pending.id) is True
+    assert database.list_pending_versions() == []

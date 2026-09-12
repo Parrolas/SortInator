@@ -65,6 +65,7 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     inbox_items = database.list_inbox_for_reconciliation()
     documents = database.list_files()
     pending_ingests = tuple(database.list_pending_ingests())
+    pending_versions = tuple(database.list_pending_versions())
     pending_filings = tuple(database.list_pending_filings())
     pending_returns = tuple(database.list_pending_returns())
     pending_undos = tuple(database.list_pending_undos())
@@ -85,6 +86,9 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     tracked_document_paths = {normalise_path_key(document.current_path) for document in documents}
     tracked_document_paths.update(
         normalise_path_key(event.destination_path) for event in pending_filings
+    )
+    tracked_document_paths.update(
+        normalise_path_key(event.destination_path) for event in pending_versions
     )
     inbox_orphans: list[ExistingDownload] = []
     untracked_subject_files: list[Path] = []
@@ -179,7 +183,13 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
             if undo_probes[event.id] is _ProbeState.UNSAFE
         ),
     }
-    for event in (*pending_filings, *pending_returns, *pending_undos, *pending_ingests):
+    for event in (
+        *pending_filings,
+        *pending_returns,
+        *pending_undos,
+        *pending_ingests,
+        *pending_versions,
+    ):
         for path in (event.source_path, event.destination_path):
             if _probe(path, state) is _ProbeState.UNSAFE:
                 unsafe_paths.add(path)
@@ -205,6 +215,7 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
         truncated=state.truncated,
         incomplete=state.incomplete,
         pending_ingest_events=pending_ingests,
+        pending_version_events=pending_versions,
     )
 
 
@@ -260,6 +271,22 @@ def apply(database: Database, report: ReconciliationReport) -> ReconciliationOut
             recovered_items.append(database.complete_ingest(pending.id))
         elif isinstance(source, ExistingDownload) and destination is _ProbeState.MISSING:
             database.cancel_ingest(pending.id)
+            cancelled_operation_event_ids.append(pending.id)
+
+    for pending in report.pending_version_events:
+        source = _probe(pending.source_path)
+        destination = _probe(pending.destination_path)
+        document = database.get_file(pending.file_id) if pending.file_id is not None else None
+        if (
+            source is _ProbeState.MISSING
+            and isinstance(destination, ExistingDownload)
+            and document is not None
+            and destination.size == document.size
+        ):
+            database.complete_version_rename(pending.id, pending.destination_path)
+            completed_operation_event_ids.append(pending.id)
+        elif isinstance(source, ExistingDownload) and destination is _ProbeState.MISSING:
+            database.cancel_version_rename(pending.id)
             cancelled_operation_event_ids.append(pending.id)
 
     for pending in report.pending_filing_events:
@@ -411,6 +438,17 @@ def findings(report: ReconciliationReport) -> tuple[ReconciliationFinding, ...]:
                 ),
                 ReconciliationFinding(
                     event.destination_path, FindingReason.PENDING_INGEST_DESTINATION, event.id
+                ),
+            )
+        )
+    for event in report.pending_version_events:
+        result.extend(
+            (
+                ReconciliationFinding(
+                    event.source_path, FindingReason.PENDING_VERSION_SOURCE, event.id
+                ),
+                ReconciliationFinding(
+                    event.destination_path, FindingReason.PENDING_VERSION_DESTINATION, event.id
                 ),
             )
         )

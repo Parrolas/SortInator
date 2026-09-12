@@ -229,7 +229,7 @@ def test_failed_undo_redirects_the_catalog_to_the_rollback_destination(
     document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
     original_bytes = document.current_path.read_bytes()
 
-    def sabotaged_mark(event: HistoryEvent, restored_path: Path) -> None:
+    def sabotaged_mark(event: HistoryEvent, restored_path: Path, **_kwargs: object) -> None:
         del restored_path
         Path(event.destination_path).write_bytes(b"unrelated replacement")
         raise RuntimeError("histórico indisponível")
@@ -424,3 +424,89 @@ def test_filing_rejects_subject_folder_that_escapes_through_a_junction(
 
     assert list(outside.iterdir()) == []
     assert database.count_inbox_items() == 1
+
+
+def test_replace_previous_version_round_trip(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    old_bytes = old.current_path.read_bytes()
+
+    source = app_config.downloads_dir / "aula.pdf"
+    source.write_bytes(b"versao nova " * 20)
+    new_item = filer.ingest(source)
+    assert new_item is not None
+    new_document = filer.file_document(
+        new_item.id, subject.id, "Slides", "Aula.pdf", replace_document_id=old.id
+    )
+
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    destination = folder / "Aula.pdf"
+    versioned = folder / "Aula (versão anterior).pdf"
+    assert destination.read_bytes() == b"versao nova " * 20
+    assert versioned.read_bytes() == old_bytes
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == versioned
+    assert new_document.current_path == destination
+    assert database.list_pending_versions() == []
+
+    restored = filer.undo_latest_filing()
+
+    assert restored is not None
+    assert restored.path.read_bytes() == b"versao nova " * 20
+    assert database.get_file(new_document.id) is None
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == destination
+    assert destination.read_bytes() == old_bytes
+    assert not versioned.exists()
+
+
+def test_replacement_uses_a_free_versioned_name(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    (folder / "Aula (versão anterior).pdf").write_bytes(b"versao ainda mais antiga")
+
+    source = app_config.downloads_dir / "aula.pdf"
+    source.write_bytes(b"nova versao " * 10)
+    new_item = filer.ingest(source)
+    assert new_item is not None
+    filer.file_document(new_item.id, subject.id, "Slides", "Aula.pdf", replace_document_id=old.id)
+
+    assert (folder / "Aula (versão anterior) (2).pdf").read_bytes() == b"x" * 200
+    assert (folder / "Aula (versão anterior).pdf").read_bytes() == b"versao ainda mais antiga"
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == folder / "Aula (versão anterior) (2).pdf"
+
+
+def test_replace_requires_the_matching_destination(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+
+    source = app_config.downloads_dir / "aula.pdf"
+    source.write_bytes(b"outra versao")
+    new_item = filer.ingest(source)
+    assert new_item is not None
+    new_document = filer.file_document(
+        new_item.id, subject.id, "Trabalhos", "aula.pdf", replace_document_id=old.id
+    )
+
+    assert old.current_path.is_file()
+    assert old.current_path.name == "Aula.pdf"
+    assert new_document.current_path.parent.name == "Trabalhos"
+    assert new_document.current_path.name == "aula.pdf"
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == old.current_path

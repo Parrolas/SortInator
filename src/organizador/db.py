@@ -124,7 +124,8 @@ CREATE TABLE IF NOT EXISTS inbox (
     status TEXT NOT NULL DEFAULT 'pending',
     suggested_subject_id INTEGER REFERENCES subjects(id) ON DELETE SET NULL,
     suggested_kind TEXT NOT NULL DEFAULT 'Outros',
-    last_error TEXT NOT NULL DEFAULT ''
+    last_error TEXT NOT NULL DEFAULT '',
+    content_sha256 TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_active_path
@@ -147,7 +148,8 @@ CREATE TABLE IF NOT EXISTS files (
     catalog_state TEXT NOT NULL DEFAULT 'active'
         CHECK (catalog_state IN ('active', 'dropped')),
     index_state TEXT NOT NULL DEFAULT '',
-    index_error TEXT NOT NULL DEFAULT ''
+    index_error TEXT NOT NULL DEFAULT '',
+    content_sha256 TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -159,6 +161,7 @@ CREATE TABLE IF NOT EXISTS events (
     inbox_id INTEGER REFERENCES inbox(id) ON DELETE SET NULL,
     subject_id INTEGER REFERENCES subjects(id) ON DELETE SET NULL,
     kind TEXT NOT NULL DEFAULT '',
+    related_event_id INTEGER,
     created_at TEXT NOT NULL,
     undone_at TEXT
 );
@@ -221,8 +224,17 @@ _EXPECTED_INDEXES = (
     "idx_events_undo",
 )
 _ADDITIVE_COLUMNS = {
-    "events": ("subject_id", "kind"),
-    "files": ("origin", "record_token", "catalog_state", "index_state", "index_error", "mtime_ns"),
+    "events": ("subject_id", "kind", "related_event_id"),
+    "files": (
+        "origin",
+        "record_token",
+        "catalog_state",
+        "index_state",
+        "index_error",
+        "mtime_ns",
+        "content_sha256",
+    ),
+    "inbox": ("content_sha256",),
     "tasks": ("reminder_lead_days", "last_notified_on"),
 }
 
@@ -381,6 +393,7 @@ class Database:
                 self._prepare_reconciliation_actions(connection)
                 self._prepare_task_reminders(connection)
                 self._prepare_search_metadata(connection)
+                self._prepare_content_hashes(connection)
                 if previous_version < 6:
                     self._prepare_search_reindex(connection)
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -437,6 +450,8 @@ class Database:
             )
         if "kind" not in columns:
             connection.execute("ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+        if "related_event_id" not in columns:
+            connection.execute("ALTER TABLE events ADD COLUMN related_event_id INTEGER")
         index_row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_inbox_active_path'"
         ).fetchone()
@@ -503,6 +518,22 @@ class Database:
             connection.execute("ALTER TABLE files ADD COLUMN index_error TEXT NOT NULL DEFAULT ''")
         if "mtime_ns" not in columns:
             connection.execute("ALTER TABLE files ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0")
+
+    @staticmethod
+    def _prepare_content_hashes(connection: sqlite3.Connection) -> None:
+        """Ensure the additive duplicate-detection columns exist."""
+
+        tables = {
+            "inbox": "ALTER TABLE inbox ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''",
+            "files": "ALTER TABLE files ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''",
+        }
+        for table, statement in tables.items():
+            columns = {
+                str(row["name"])
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "content_sha256" not in columns:
+                connection.execute(statement)
 
     @staticmethod
     def _prepare_search_reindex(connection: sqlite3.Connection) -> None:
@@ -768,7 +799,7 @@ class Database:
             connection.commit()
         return self._event(row)
 
-    def complete_ingest(self, event_id: int) -> InboxItem:
+    def complete_ingest(self, event_id: int, content_sha256: str = "") -> InboxItem:
         """Publish an ingested file only after its move has completed."""
 
         with self.connect() as connection:
@@ -781,8 +812,12 @@ class Database:
                 raise LookupError("A recolha pendente já não existe.")
             inbox_id = int(event["inbox_id"])
             connection.execute(
-                "UPDATE inbox SET status = 'pending', last_error = '' WHERE id = ?",
-                (inbox_id,),
+                """
+                UPDATE inbox
+                SET status = 'pending', last_error = '', content_sha256 = ?
+                WHERE id = ?
+                """,
+                (content_sha256, inbox_id),
             )
             connection.execute("UPDATE events SET action = 'ingest' WHERE id = ?", (event_id,))
             row = connection.execute("SELECT * FROM inbox WHERE id = ?", (inbox_id,)).fetchone()
@@ -791,6 +826,26 @@ class Database:
             item = self._inbox(row)
             connection.commit()
         return item
+
+    def set_inbox_hash(self, inbox_id: int, content_sha256: str) -> None:
+        """Cache a content fingerprint computed after ingestion."""
+
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE inbox SET content_sha256 = ? WHERE id = ? AND content_sha256 = ''",
+                (content_sha256, inbox_id),
+            )
+            connection.commit()
+
+    def set_file_hash(self, file_id: int, content_sha256: str) -> None:
+        """Cache a content fingerprint computed after filing."""
+
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE files SET content_sha256 = ? WHERE id = ? AND content_sha256 = ''",
+                (content_sha256, file_id),
+            )
+            connection.commit()
 
     def cancel_ingest(self, event_id: int) -> None:
         """Discard a reservation after verifying that its move did not persist."""
@@ -956,6 +1011,8 @@ class Database:
         subject_id: int,
         kind: str,
         destination_path: Path,
+        *,
+        related_event_id: int | None = None,
     ) -> HistoryEvent:
         """Persist a filing destination before its filesystem move."""
 
@@ -966,6 +1023,7 @@ class Database:
             "filing",
             subject_id=subject_id,
             kind=kind,
+            related_event_id=related_event_id,
         )
 
     def begin_return(self, inbox_id: int, destination_path: Path) -> HistoryEvent:
@@ -987,6 +1045,7 @@ class Database:
         *,
         subject_id: int | None = None,
         kind: str = "",
+        related_event_id: int | None = None,
     ) -> HistoryEvent:
         with self.connect() as connection:
             existing = connection.execute(
@@ -1020,8 +1079,8 @@ class Database:
                 """
                 INSERT INTO events(
                     action, source_path, destination_path, inbox_id,
-                    subject_id, kind, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    subject_id, kind, related_event_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     action,
@@ -1030,6 +1089,7 @@ class Database:
                     inbox_id,
                     subject_id,
                     kind,
+                    related_event_id,
                     now,
                 ),
             )
@@ -1123,12 +1183,13 @@ class Database:
         """Atomically record a successful inbox-to-subject move."""
 
         now = _now()
+        pending_related: int | None = None
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if pending_event_id is not None:
                 marker = connection.execute(
                     """
-                    SELECT id FROM events
+                    SELECT id, related_event_id FROM events
                     WHERE id = ? AND action = 'file_pending' AND inbox_id = ?
                       AND destination_path = ? AND subject_id = ? AND kind = ?
                     """,
@@ -1142,6 +1203,11 @@ class Database:
                 ).fetchone()
                 if marker is None:
                     raise LookupError("A organização pendente já foi concluída ou cancelada.")
+                pending_related = (
+                    int(marker["related_event_id"])
+                    if marker["related_event_id"] is not None
+                    else None
+                )
                 item_row = connection.execute(
                     "SELECT * FROM inbox WHERE id = ? AND status = 'filing'",
                     (inbox_id,),
@@ -1175,7 +1241,7 @@ class Database:
                     SET subject_id = ?, inbox_id = ?, kind = ?, original_name = ?,
                         current_path = ?, original_path = ?, size = ?, filed_at = ?,
                         indexed_at = NULL, origin = 'filed', record_token = ?,
-                        catalog_state = 'active'
+                        catalog_state = 'active', content_sha256 = ?
                     WHERE id = ? AND catalog_state = 'dropped'
                     """,
                     (
@@ -1188,6 +1254,7 @@ class Database:
                         item.size,
                         now,
                         token,
+                        item.content_sha256,
                         file_id,
                     ),
                 )
@@ -1196,8 +1263,8 @@ class Database:
                     """
                     INSERT INTO files(
                         subject_id, inbox_id, kind, original_name, current_path,
-                        original_path, size, filed_at, record_token
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        original_path, size, filed_at, record_token, content_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         subject_id,
@@ -1209,6 +1276,7 @@ class Database:
                         item.size,
                         now,
                         token,
+                        item.content_sha256,
                     ),
                 )
                 if cursor.lastrowid is None:
@@ -1221,10 +1289,18 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO events(
-                    action, source_path, destination_path, file_id, inbox_id, created_at
-                ) VALUES ('file', ?, ?, ?, ?, ?)
+                    action, source_path, destination_path, file_id, inbox_id,
+                    related_event_id, created_at
+                ) VALUES ('file', ?, ?, ?, ?, ?, ?)
                 """,
-                (str(item.path), str(destination_path), file_id, inbox_id, now),
+                (
+                    str(item.path),
+                    str(destination_path),
+                    file_id,
+                    inbox_id,
+                    pending_related,
+                    now,
+                ),
             )
             if pending_event_id is None:
                 connection.execute(
@@ -1565,6 +1641,20 @@ class Database:
             ).fetchall()
         return [self._file(row) for row in rows]
 
+    def list_active_documents_by_size(self, size: int) -> list[FiledDocument]:
+        """List active catalog documents that share a byte size."""
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM files
+                WHERE catalog_state = 'active' AND size = ?
+                ORDER BY filed_at DESC, id DESC
+                """,
+                (size,),
+            ).fetchall()
+        return [self._file(row) for row in rows]
+
     def list_adopted_files(self) -> list[FiledDocument]:
         """List files cataloged in place so the user can unregister them."""
 
@@ -1816,6 +1906,93 @@ class Database:
             ).fetchall()
         return [self._event(row) for row in rows]
 
+    def begin_version_rename(self, file_id: int, destination_path: Path) -> HistoryEvent:
+        """Persist a previous-version rename before its filesystem move."""
+
+        with self.connect() as connection:
+            document = connection.execute(
+                """
+                SELECT current_path FROM files
+                WHERE id = ? AND origin = 'filed' AND catalog_state = 'active'
+                """,
+                (file_id,),
+            ).fetchone()
+            if document is None:
+                raise LookupError("O documento anterior já não está no catálogo.")
+            now = _now()
+            cursor = connection.execute(
+                """
+                INSERT INTO events(
+                    action, source_path, destination_path, file_id, created_at
+                ) VALUES ('version_pending', ?, ?, ?, ?)
+                """,
+                (str(document["current_path"]), str(destination_path), file_id, now),
+            )
+            if cursor.lastrowid is None:
+                raise RuntimeError("A base de dados não devolveu o id da versão anterior.")
+            event_id = cursor.lastrowid
+            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+            connection.commit()
+        if row is None:  # pragma: no cover - defensive database invariant
+            raise RuntimeError("A versão anterior foi preparada mas não pôde ser lida.")
+        return self._event(row)
+
+    def complete_version_rename(self, event_id: int, destination_path: Path) -> None:
+        """Point the catalog at the renamed previous version."""
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = connection.execute(
+                "SELECT file_id FROM events WHERE id = ? AND action = 'version_pending'",
+                (event_id,),
+            ).fetchone()
+            if event is None or event["file_id"] is None:
+                raise LookupError("A renomeação da versão anterior já não está pendente.")
+            connection.execute(
+                "UPDATE files SET current_path = ? WHERE id = ?",
+                (str(destination_path), int(event["file_id"])),
+            )
+            connection.execute(
+                "UPDATE events SET action = 'version', destination_path = ? WHERE id = ?",
+                (str(destination_path), event_id),
+            )
+            connection.commit()
+
+    def cancel_version_rename(self, event_id: int) -> bool:
+        """Discard a prepared version rename whose move never happened."""
+
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM events WHERE id = ? AND action = 'version_pending'",
+                (event_id,),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def list_pending_versions(self) -> list[HistoryEvent]:
+        """List previous-version renames interrupted before their commit."""
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM events WHERE action = 'version_pending' ORDER BY id ASC"
+            ).fetchall()
+        return [self._event(row) for row in rows]
+
+    def linked_version_event(self, filing_event: HistoryEvent) -> HistoryEvent | None:
+        """Return the still-active version rename linked to a filing, if any."""
+
+        if filing_event.related_event_id is None:
+            return None
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM events
+                WHERE id = ? AND action = 'version' AND undone_at IS NULL
+                """,
+                (filing_event.related_event_id,),
+            ).fetchone()
+        return self._event(row) if row is not None else None
+
     def cancel_pending_undo(self, event_id: int) -> bool:
         """Remove a prepared undo that did not move its source document."""
 
@@ -1912,7 +2089,13 @@ class Database:
             connection.commit()
         return self.get_inbox_item(event.inbox_id)
 
-    def mark_filing_undone(self, event: HistoryEvent, restored_path: Path) -> None:
+    def mark_filing_undone(
+        self,
+        event: HistoryEvent,
+        restored_path: Path,
+        *,
+        version_event: HistoryEvent | None = None,
+    ) -> None:
         """Update persistence after the filer restores a document to the inbox."""
 
         if event.file_id is None or event.inbox_id is None:
@@ -1920,6 +2103,26 @@ class Database:
         with self.connect() as connection:
             if not self._complete_filing_undo(connection, event, restored_path):
                 raise LookupError("A organização já não está disponível para desfazer.")
+            if version_event is not None:
+                if version_event.file_id is None:
+                    raise LookupError("A versão anterior não tem registo associado.")
+                updated = connection.execute(
+                    """
+                    UPDATE files SET current_path = ?
+                    WHERE id = ? AND current_path = ? AND catalog_state = 'active'
+                    """,
+                    (
+                        str(event.destination_path),
+                        version_event.file_id,
+                        str(version_event.destination_path),
+                    ),
+                )
+                if updated.rowcount != 1:
+                    raise LookupError("A versão anterior já não está disponível para desfazer.")
+                connection.execute(
+                    "UPDATE events SET undone_at = ? WHERE id = ? AND action = 'version'",
+                    (_now(), version_event.id),
+                )
             connection.commit()
 
     @staticmethod
@@ -2508,6 +2711,7 @@ class Database:
             ),
             suggested_kind=str(row["suggested_kind"]),
             last_error=str(row["last_error"]),
+            content_sha256=str(row["content_sha256"]),
         )
 
     @staticmethod
@@ -2529,6 +2733,7 @@ class Database:
             catalog_state=str(row["catalog_state"]),
             index_state=str(row["index_state"]),
             index_error=str(row["index_error"]),
+            content_sha256=str(row["content_sha256"]),
         )
 
     @staticmethod
@@ -2545,6 +2750,9 @@ class Database:
             created_at=datetime.fromisoformat(str(row["created_at"])),
             undone_at=_parse_datetime(
                 str(row["undone_at"]) if row["undone_at"] is not None else None
+            ),
+            related_event_id=(
+                int(row["related_event_id"]) if row["related_event_id"] is not None else None
             ),
         )
 

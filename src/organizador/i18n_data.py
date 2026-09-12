@@ -19,6 +19,13 @@ EN_STRINGS: dict[str, str] = {
     "Não foi possível preparar a recolha do ficheiro.": "Could not prepare the file transfer into the inbox.",
     "Download com recolha interrompida; o original foi mantido para revisão.": "Download transfer interrupted; the original was kept for review.",
     "Cópia por verificar; pode estar incompleta. Compara com o original em Downloads.": "Unverified copy; it may be incomplete. Compare it with the original in Downloads.",
+    "Ver existente": "View existing",
+    "Substituir a versão anterior": "Replace the previous version",
+    "A versão atual fica na pasta com o sufixo «versão anterior».": "The current version stays in the folder with the \u201cprevious version\u201d suffix.",
+    "Já tens este ficheiro em {location}: {name}": "You already have this file in {location}: {name}",
+    "versão anterior": "previous version",
+    "Renomeação de versão interrompida; o original foi mantido para revisão.": "Version rename interrupted; the original was kept for review.",
+    "Cópia da versão anterior por verificar; compara os ficheiros.": "Unverified previous-version copy; compare the files.",
     " Os outros {count} ficam em Downloads para um próximo lote.": (
         " The other {count} stay in Downloads for a later batch."
     ),
@@ -795,6 +802,13 @@ ES_STRINGS: dict[str, str] = {
     "Não foi possível preparar a recolha do ficheiro.": "No se pudo preparar el traslado del archivo a la bandeja de entrada.",
     "Download com recolha interrompida; o original foi mantido para revisão.": "Traslado de descarga interrumpido; se conservó el original para su revisión.",
     "Cópia por verificar; pode estar incompleta. Compara com o original em Downloads.": "Copia sin verificar; puede estar incompleta. Compárala con el original en Descargas.",
+    "Ver existente": "Ver existente",
+    "Substituir a versão anterior": "Sustituir la versión anterior",
+    "A versão atual fica na pasta com o sufixo «versão anterior».": "La versión actual se queda en la carpeta con el sufijo «versión anterior».",
+    "Já tens este ficheiro em {location}: {name}": "Ya tienes este archivo en {location}: {name}",
+    "versão anterior": "versión anterior",
+    "Renomeação de versão interrompida; o original foi mantido para revisão.": "Renombrado de versión interrumpido; se conservó el original para su revisión.",
+    "Cópia da versão anterior por verificar; compara os ficheiros.": "Copia de la versión anterior sin verificar; compara los archivos.",
     " Os outros {count} ficam em Downloads para um próximo lote.": (
         " Los otros {count} se quedan en Descargas para otro lote."
     ),
@@ -1610,6 +1624,13 @@ FR_STRINGS: dict[str, str] = {
     "Não foi possível preparar a recolha do ficheiro.": "Impossible de préparer le transfert du fichier dans la boîte de réception.",
     "Download com recolha interrompida; o original foi mantido para revisão.": "Transfert du téléchargement interrompu ; l'original a été conservé pour vérification.",
     "Cópia por verificar; pode estar incompleta. Compara com o original em Downloads.": "Copie non vérifiée ; elle peut être incomplète. Comparez-la à l'original dans Téléchargements.",
+    "Ver existente": "Voir l'existant",
+    "Substituir a versão anterior": "Remplacer la version précédente",
+    "A versão atual fica na pasta com o sufixo «versão anterior».": "La version actuelle reste dans le dossier avec le suffixe « version précédente ».",
+    "Já tens este ficheiro em {location}: {name}": "Tu as déjà ce fichier dans {location} : {name}",
+    "versão anterior": "version précédente",
+    "Renomeação de versão interrompida; o original foi mantido para revisão.": "Renommage de version interrompu ; l'original a été conservé pour vérification.",
+    "Cópia da versão anterior por verificar; compara os ficheiros.": "Copie de la version précédente non vérifiée ; comparez les fichiers.",
     " Os outros {count} ficam em Downloads para um próximo lote.": (
         " Les autres {count} restent dans Téléchargements pour un prochain lot."
     ),

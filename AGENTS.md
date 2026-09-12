@@ -63,6 +63,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_update_release_e2e.ps1 `
 - `src/organizador/db.py` — SQLite + FTS5 catalog (schema + migrations at top of file)
 - `src/organizador/updater.py` — transactional updates + embedded PowerShell swap helper
 - `src/organizador/notifications.py` / `windows_shell.py` / `startup.py` — toast actions, COM shell helper, registry integration
+- `src/organizador/duplicates.py` — content fingerprints and catalog duplicate lookup
 - `src/organizador/ocr.py` / `extractors.py` / `indexer.py` — search text pipeline
 - `scripts/installer.iss` + `build_installer.ps1` — Inno Setup package; payload in `{app}\app` is updater-replaceable
 - Tests mirror modules; shared fixtures (`qt_app`, `app_config`, `database`, `subject`) in `tests/conftest.py`. OCR engine tests skip without a pt-PT language pack.

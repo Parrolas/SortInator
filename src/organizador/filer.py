@@ -13,12 +13,14 @@ from organizador.config import (
     AppConfig,
 )
 from organizador.db import METRIC_COLLISIONS_RENAMED, Database
+from organizador.duplicates import file_sha256
 from organizador.i18n import _
 from organizador.models import (
     FILE_KINDS,
     ExistingDownload,
     ExistingDownloadsPlan,
     FiledDocument,
+    HistoryEvent,
     InboxItem,
     Subject,
 )
@@ -26,6 +28,7 @@ from organizador.paths import (
     IncompleteMoveError,
     is_direct_child,
     move_without_overwrite,
+    normalise_path_key,
     resolve_contained,
     sanitise_component,
     sanitise_filename,
@@ -190,7 +193,7 @@ class FilingService:
                 )
             ) from exc
         try:
-            item = self.database.complete_ingest(pending.id)
+            item = self.database.complete_ingest(pending.id, file_sha256(destination))
         except Exception as exc:
             rollback = unique_path(source.parent, source.name)
             try:
@@ -216,6 +219,8 @@ class FilingService:
         subject_id: int,
         kind: str,
         requested_name: str,
+        *,
+        replace_document_id: int | None = None,
     ) -> FiledDocument:
         """Move an inbox document to a subject/type folder."""
 
@@ -235,11 +240,18 @@ class FilingService:
 
         filename = self._name_with_original_extension(requested_name, item.original_name)
         folder = self.config.university_root / subject.folder_name / kind
+        version_event = self._replace_previous_version(folder, filename, replace_document_id)
         destination, collided = self._plan_contained_destination(
             folder, filename, self.config.university_root
         )
         try:
-            pending = self.database.begin_document_filing(inbox_id, subject_id, kind, destination)
+            pending = self.database.begin_document_filing(
+                inbox_id,
+                subject_id,
+                kind,
+                destination,
+                related_event_id=version_event.id if version_event is not None else None,
+            )
         except Exception as exc:
             raise FilingError(_("Não foi possível preparar o histórico da organização.")) from exc
         try:
@@ -297,6 +309,57 @@ class FilingService:
             raise FilingError(message) from exc
         self._register_collision(collided)
         return document
+
+    @staticmethod
+    def _previous_version_name(filename: str) -> str:
+        path = Path(filename)
+        return f"{path.stem} ({_('versão anterior')}){path.suffix}"
+
+    def _replace_previous_version(
+        self, folder: Path, filename: str, replace_document_id: int | None
+    ) -> HistoryEvent | None:
+        """Rename the document being replaced when the request matches it exactly.
+
+        A failed rename is not fatal: the filing then proceeds as an ordinary
+        collision-safe copy, and any retained rename stays journaled.
+        """
+
+        if replace_document_id is None:
+            return None
+        existing = self.database.get_file(replace_document_id)
+        if existing is None or existing.catalog_state != "active":
+            return None
+        expected = folder / sanitise_filename(filename)
+        if normalise_path_key(existing.current_path) != normalise_path_key(expected):
+            return None
+        try:
+            versioned, _ = self._plan_contained_destination(
+                folder,
+                self._previous_version_name(filename),
+                self.config.university_root,
+            )
+        except FilingError:
+            return None
+        try:
+            event = self.database.begin_version_rename(existing.id, versioned)
+        except Exception:
+            LOGGER.exception("Could not prepare the previous-version rename")
+            return None
+        try:
+            move_without_overwrite(existing.current_path, versioned)
+        except OSError:
+            LOGGER.exception("Could not rename the previous version")
+            with suppress(Exception):
+                self.database.cancel_version_rename(event.id)
+            return None
+        try:
+            self.database.complete_version_rename(event.id, versioned)
+        except Exception:
+            LOGGER.exception("Could not finalize the previous-version rename")
+            with suppress(OSError):
+                move_without_overwrite(versioned, existing.current_path)
+            return None
+        return event
 
     def return_to_downloads(self, inbox_id: int) -> Path:
         """Return non-university material to Downloads without overwriting."""
@@ -363,6 +426,7 @@ class FilingService:
                     "O histórico não foi alterado."
                 )
             )
+        version_event = self.database.linked_version_event(event)
         restored_path, collided = self._plan_contained_destination(
             self.config.inbox_dir, event.source_path.name, self.config.inbox_dir
         )
@@ -387,9 +451,23 @@ class FilingService:
             raise FilingError(
                 _("Não foi possível desfazer porque o ficheiro está a ser usado.")
             ) from exc
+        version_reverted = False
+        if version_event is not None:
+            try:
+                move_without_overwrite(version_event.destination_path, event.destination_path)
+                version_reverted = True
+            except OSError:
+                LOGGER.exception("Failed to restore the previous version name")
         try:
-            self.database.mark_filing_undone(event, restored_path)
+            self.database.mark_filing_undone(
+                event,
+                restored_path,
+                version_event=version_event if version_reverted else None,
+            )
         except Exception as exc:
+            if version_reverted and version_event is not None:
+                with suppress(OSError):
+                    move_without_overwrite(event.destination_path, version_event.destination_path)
             rollback = unique_path(event.destination_path.parent, event.destination_path.name)
             try:
                 move_without_overwrite(restored_path, rollback)

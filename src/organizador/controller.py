@@ -19,7 +19,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QProgressDialog, QSystemTrayIcon
 
-from organizador import notifications, ocr, updater
+from organizador import duplicates, notifications, ocr, updater
 from organizador.classifier import guess_filing
 from organizador.config import AppConfig, default_data_dir, parse_extensions
 from organizador.db import Database
@@ -109,6 +109,7 @@ class _FileJob:
     filename: str
     create_task: bool
     due_date: date | None
+    replace_document_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,6 +499,7 @@ class AppController(QObject):
         self.prompt.filing_requested.connect(self._file_item)
         self.prompt.later_requested.connect(self._prompt_finished)
         self.prompt.return_requested.connect(self._return_item)
+        self.prompt.reveal_requested.connect(self._reveal_path)
 
     @staticmethod
     def _job_claims(job: object) -> set[tuple[str, str]]:
@@ -1117,8 +1119,13 @@ class AppController(QObject):
             guess = self._filing_guess(item.original_name, subjects)
             self.database.update_inbox_suggestion(item.id, guess.subject_id, guess.kind)
             refreshed = self.database.get_inbox_item(item.id)
+            candidate = refreshed or item
             self.prompt.show_item(
-                refreshed or item, subjects, guess, name_template=self.config.filename_template
+                candidate,
+                subjects,
+                guess,
+                name_template=self.config.filename_template,
+                duplicate=duplicates.find_duplicate(self.database, candidate),
             )
             return
 
@@ -1130,12 +1137,27 @@ class AppController(QObject):
         filename: str,
         create_task: bool,
         due_date: date | None,
+        replace_document_id: int | None = None,
     ) -> None:
-        job = _FileJob(inbox_id, subject_id, kind, filename, create_task, due_date)
+        job = _FileJob(
+            inbox_id,
+            subject_id,
+            kind,
+            filename,
+            create_task,
+            due_date,
+            replace_document_id,
+        )
         self._submit_transfer(
             "file",
             job,
-            lambda: self.filer.file_document(inbox_id, subject_id, kind, filename),
+            lambda: self.filer.file_document(
+                inbox_id,
+                subject_id,
+                kind,
+                filename,
+                replace_document_id=replace_document_id,
+            ),
         )
 
     def _finish_filed(self, job: _FileJob, result: object, error: str | None) -> None:

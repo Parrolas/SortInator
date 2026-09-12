@@ -23,16 +23,17 @@ from PySide6.QtWidgets import (
 from organizador.classifier import extract_due_date
 from organizador.filer import render_final_name
 from organizador.i18n import _
-from organizador.models import FILE_KINDS, FilingGuess, InboxItem, Subject
+from organizador.models import FILE_KINDS, FiledDocument, FilingGuess, InboxItem, Subject
 from organizador.ui.widgets import button, clear_layout, format_size, label
 
 
 class FilingPrompt(QWidget):
     """Collect a subject/type decision without interrupting the whole desktop."""
 
-    filing_requested = Signal(int, int, str, str, bool, object)
+    filing_requested = Signal(int, int, str, str, bool, object, object)
     later_requested = Signal(int)
     return_requested = Signal(int)
+    reveal_requested = Signal(object)
 
     def __init__(self, timeout_seconds: int = 45, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -78,6 +79,29 @@ class FilingPrompt(QWidget):
         top.addWidget(self.countdown_label, 0, Qt.AlignmentFlag.AlignTop)
         card_layout.addLayout(top)
 
+        self.duplicate_banner = QFrame()
+        self.duplicate_banner.setObjectName("Panel")
+        banner_layout = QVBoxLayout(self.duplicate_banner)
+        banner_layout.setContentsMargins(12, 10, 12, 10)
+        banner_layout.setSpacing(6)
+        self.duplicate_label = label("", "Muted")
+        self.duplicate_label.setWordWrap(True)
+        banner_layout.addWidget(self.duplicate_label)
+        banner_row = QHBoxLayout()
+        self.reveal_duplicate_button = button(_("Ver existente"), variant="quiet")
+        self.reveal_duplicate_button.clicked.connect(self._reveal_duplicate)
+        banner_row.addWidget(self.reveal_duplicate_button)
+        self.replace_check = QCheckBox(_("Substituir a versão anterior"))
+        self.replace_check.setToolTip(
+            _("A versão atual fica na pasta com o sufixo «versão anterior».")
+        )
+        banner_row.addWidget(self.replace_check)
+        banner_row.addStretch(1)
+        banner_layout.addLayout(banner_row)
+        self.duplicate_banner.hide()
+        card_layout.addWidget(self.duplicate_banner)
+        self._duplicate: FiledDocument | None = None
+
         self.name_edit = QLineEdit()
         self.name_edit.setAccessibleName(_("Nome final do ficheiro"))
         self.name_edit.setToolTip(_("Podes corrigir o nome; a extensão original é preservada"))
@@ -109,7 +133,7 @@ class FilingPrompt(QWidget):
         type_row.setSpacing(7)
         self.type_group = QButtonGroup(self)
         self.type_group.setExclusive(True)
-        self.type_group.idClicked.connect(lambda _identifier: self._render_name())
+        self.type_group.idClicked.connect(self._option_changed)
         self.type_buttons: dict[str, QPushButton] = {}
         for kind in FILE_KINDS:
             type_button = QPushButton(kind)
@@ -166,6 +190,7 @@ class FilingPrompt(QWidget):
         subjects: list[Subject],
         guess: FilingGuess,
         name_template: str = "{nome_original}",
+        duplicate: FiledDocument | None = None,
     ) -> None:
         """Populate and reveal the prompt for an inbox item."""
 
@@ -173,6 +198,7 @@ class FilingPrompt(QWidget):
         self.selected_subject_id = guess.subject_id
         self.error_label.clear()
         self._custom_name = False
+        self._duplicate = duplicate
         self._prompt_subjects = list(subjects)
         self._prompt_template = name_template
         self._prompt_original_name = item.original_name
@@ -222,6 +248,7 @@ class FilingPrompt(QWidget):
             self.type_buttons["Outros"].setChecked(True)
         self._render_name()
         self.name_edit.selectAll()
+        self._update_duplicate_banner()
 
         inferred_due = extract_due_date(item.original_name)
         self.task_check.setChecked(inferred_due is not None)
@@ -263,6 +290,48 @@ class FilingPrompt(QWidget):
         self.selected_subject_id = subject_id
         self.confirm_button.setEnabled(True)
         self._render_name()
+        self._update_duplicate_banner()
+
+    def _option_changed(self, _identifier: int) -> None:
+        self._render_name()
+        self._update_duplicate_banner()
+
+    def _update_duplicate_banner(self) -> None:
+        """Explain a duplicate match and enable replacement only on its folder."""
+
+        duplicate = self._duplicate
+        if duplicate is None:
+            self.duplicate_banner.hide()
+            self.replace_check.setChecked(False)
+            return
+        subject_name = next(
+            (
+                subject.name
+                for subject in self._prompt_subjects
+                if subject.id == duplicate.subject_id
+            ),
+            "",
+        )
+        location = f"{subject_name} / {duplicate.kind}" if subject_name else duplicate.kind
+        self.duplicate_label.setText(
+            _("Já tens este ficheiro em {location}: {name}").format(
+                location=location, name=duplicate.current_path.name
+            )
+        )
+        checked = self.type_group.checkedButton()
+        same_destination = (
+            duplicate.subject_id == self.selected_subject_id
+            and checked is not None
+            and checked.text() == duplicate.kind
+        )
+        self.replace_check.setEnabled(same_destination)
+        if not same_destination:
+            self.replace_check.setChecked(False)
+        self.duplicate_banner.show()
+
+    def _reveal_duplicate(self) -> None:
+        if self._duplicate is not None:
+            self.reveal_requested.emit(self._duplicate.current_path)
 
     def _name_text_changed(self) -> None:
         if self._programmatic_name:
@@ -313,6 +382,11 @@ class FilingPrompt(QWidget):
         subject_id = self.selected_subject_id
         create_task = self.task_check.isChecked()
         due_date = self.due_edit.date().toPython() if create_task else None
+        replace_document_id = (
+            self._duplicate.id
+            if self.replace_check.isChecked() and self._duplicate is not None
+            else None
+        )
         self._finish_action()
         self.filing_requested.emit(
             item_id,
@@ -321,6 +395,7 @@ class FilingPrompt(QWidget):
             self.name_edit.text().strip(),
             create_task,
             due_date,
+            replace_document_id,
         )
 
     def _later(self) -> None:

@@ -2,6 +2,19 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.14.0 - 2026-09-12
+
+### Added
+
+- Duplicate detection: when a new download matches a document already in the
+  catalog, the filing prompt shows where the existing copy lives, with a
+  button to reveal it and an option to replace the previous version. The
+  replaced file stays in its folder with a "versão anterior" suffix, is
+  journaled like every other move, and is restored by undo together with the
+  new filing.
+- Content fingerprints are recorded at ingestion and cached per document on
+  first comparison, so detection adds no cost to ordinary filings.
+
 ## 0.13.3 - 2026-09-12
 
 ### Fixed

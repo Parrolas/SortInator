@@ -44,6 +44,7 @@ class InboxItem:
     suggested_subject_id: int | None
     suggested_kind: str
     last_error: str
+    content_sha256: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,7 @@ class FiledDocument:
     catalog_state: str = "active"
     index_state: str = ""
     index_error: str = ""
+    content_sha256: str = ""
 
 
 class FindingReason(StrEnum):
@@ -72,6 +74,8 @@ class FindingReason(StrEnum):
     UNTRACKED_SUBJECT_FILE = "untracked_subject_file"
     PENDING_INGEST_SOURCE = "pending_ingest_source"
     PENDING_INGEST_DESTINATION = "pending_ingest_destination"
+    PENDING_VERSION_SOURCE = "pending_version_source"
+    PENDING_VERSION_DESTINATION = "pending_version_destination"
     MISSING_DOCUMENT = "missing_document"
     BROKEN_UNDO_EVENT = "broken_undo_event"
     PENDING_FILING_SOURCE = "pending_filing_source"
@@ -110,6 +114,7 @@ class HistoryEvent:
     kind: str
     created_at: datetime
     undone_at: datetime | None
+    related_event_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +247,7 @@ class ReconciliationReport:
     truncated: bool = False
     incomplete: bool = False
     pending_ingest_events: tuple[HistoryEvent, ...] = ()
+    pending_version_events: tuple[HistoryEvent, ...] = ()
 
     @property
     def finding_count(self) -> int:
@@ -261,6 +267,7 @@ class ReconciliationReport:
             + len(self.unsafe_paths)
             + len(self.subject_folder_collisions)
             + len(self.pending_ingest_events)
+            + len(self.pending_version_events)
         )
 
 
