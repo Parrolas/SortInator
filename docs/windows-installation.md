@@ -1,6 +1,6 @@
 # Windows installation and notifications
 
-The easiest download is `Organizador-0.13.0-Setup.exe`. It installs for the
+The easiest download is `Organizador-<versão>-Setup.exe`. It installs for the
 current user under `%LOCALAPPDATA%\Programs\Organizador`, without requesting
 administrator rights. Close Organizador through its tray menu before installing
 or uninstalling; a transfer already in progress finishes before the app exits.
