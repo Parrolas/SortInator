@@ -627,7 +627,9 @@ def test_filing_prompt_waits_for_a_decision_by_default(
         inbox_path.stat().st_size,
     )
     prompt = FilingPrompt(timeout_seconds=30)
+    returned: list[int] = []
     later: list[int] = []
+    prompt.return_requested.connect(returned.append)
     prompt.later_requested.connect(later.append)
     try:
         guess = guess_filing(item.original_name, [subject])
@@ -636,17 +638,61 @@ def test_filing_prompt_waits_for_a_decision_by_default(
 
         assert not prompt.timer.isActive()
         assert not prompt.countdown_label.isVisible()
-        assert prompt.close_button.toolTip() == "Fechar"
-        assert prompt.close_button.accessibleName() == "Fechar"
+        tooltip = "Não é da universidade: devolve o ficheiro"
+        assert prompt.close_button.toolTip() == tooltip
+        assert prompt.close_button.accessibleName() == tooltip
 
         prompt.close_button.click()
         qt_app.processEvents()
 
-        assert later == [item.id]
+        assert returned == [item.id]
+        assert later == []
         assert prompt.current_item_id is None
+
+        prompt.show_item(item, [subject], guess)
+        qt_app.processEvents()
+        later_button = next(
+            control
+            for control in prompt.findChildren(QPushButton)
+            if control.text() == "Mais tarde"
+        )
+        later_button.click()
+        qt_app.processEvents()
+
+        assert later == [item.id]
+        assert returned == [item.id]
     finally:
         prompt.timer.stop()
         prompt.hide()
+
+
+def test_prompt_close_returns_the_file_to_its_origin(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del subject
+    origin = tmp_path / "Ambiente de Trabalho"
+    origin.mkdir()
+    source = origin / "apontamento.pdf"
+    source.write_bytes(b"external note content " * 8)
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        controller.organize_external_paths([str(source)])
+        _pump_until(qt_app, lambda: controller.prompt.current_item_id is not None)
+
+        controller.prompt.close_button.click()
+        _pump_until(qt_app, lambda: any(args[0] == "Ficheiro devolvido" for args, _ in notices))
+
+        assert source.read_bytes() == b"external note content " * 8
+        assert controller.prompt.current_item_id is None
+        assert controller.database.count_inbox_items() == 0
+    finally:
+        controller.prompt.timer.stop()
+        controller.prompt.hide()
+        _close_controller(qt_app, controller)
 
 
 def test_filing_prompt_counts_down_when_auto_close_is_enabled(

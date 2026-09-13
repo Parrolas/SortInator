@@ -2,6 +2,15 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.14.4 - 2026-09-13
+
+### Changed
+
+- The ✕ button in the filing popup now behaves like "Não é da universidade":
+  it returns the file to the folder it came from instead of only dismissing
+  the popup. Esc and the window close button still keep the file in the
+  Inbox ("Mais tarde").
+
 ## 0.14.3 - 2026-09-12
 
 ### Changed

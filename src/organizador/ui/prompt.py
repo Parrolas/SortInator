@@ -86,10 +86,10 @@ class FilingPrompt(QWidget):
         top.addWidget(self.countdown_label, 0, Qt.AlignmentFlag.AlignTop)
         self.close_button = QPushButton("✕")
         self.close_button.setObjectName("PromptClose")
-        self.close_button.setToolTip(_("Fechar"))
-        self.close_button.setAccessibleName(_("Fechar"))
+        self.close_button.setToolTip(_("Não é da universidade: devolve o ficheiro"))
+        self.close_button.setAccessibleName(_("Não é da universidade: devolve o ficheiro"))
         self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_button.clicked.connect(self._later)
+        self.close_button.clicked.connect(self._return)
         top.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
         card_layout.addLayout(top)
 

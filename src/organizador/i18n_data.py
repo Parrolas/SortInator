@@ -291,6 +291,7 @@ EN_STRINGS: dict[str, str] = {
         "Could not review the local history: {error}"
     ),
     "Não é da universidade": "Not university material",
+    "Não é da universidade: devolve o ficheiro": ("Not university material: returns the file"),
     "O caminho registado já não é um ficheiro normal. Não foi seguido nem alterado.": (
         "The recorded path is no longer a regular file. It was not followed or changed."
     ),
@@ -1093,6 +1094,7 @@ ES_STRINGS: dict[str, str] = {
         "No se pudo revisar el historial local: {error}"
     ),
     "Não é da universidade": "No es de la universidad",
+    "Não é da universidade: devolve o ficheiro": ("No es de la universidad: devuelve el archivo"),
     "O caminho registado já não é um ficheiro normal. Não foi seguido nem alterado.": (
         "La ruta registrada ya no es un archivo normal. No fue seguida ni alterada."
     ),
@@ -1933,6 +1935,7 @@ FR_STRINGS: dict[str, str] = {
         "Impossible de consulter l'historique local : {error}"
     ),
     "Não é da universidade": "Pas pour l'université",
+    "Não é da universidade: devolve o ficheiro": ("Pas pour l'université : renvoie le fichier"),
     "O caminho registado já não é um ficheiro normal. Não foi seguido nem alterado.": (
         "Le chemin enregistré n'est plus un fichier normal. Il n'a été ni suivi ni modifié."
     ),
