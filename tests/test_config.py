@@ -25,6 +25,7 @@ def test_settings_round_trip_preserves_unicode_paths(app_config: AppConfig) -> N
     app_config.university_root = app_config.university_root / "Época 1"
     app_config.allowed_extensions = (".pdf", ".md")
     app_config.prompt_timeout_seconds = 61
+    app_config.prompt_timeout_enabled = True
     app_config.save()
 
     loaded = AppConfig.load(app_config.data_dir)
@@ -32,6 +33,7 @@ def test_settings_round_trip_preserves_unicode_paths(app_config: AppConfig) -> N
     assert loaded.university_root == app_config.university_root
     assert loaded.allowed_extensions == (".pdf", ".md")
     assert loaded.prompt_timeout_seconds == 61
+    assert loaded.prompt_timeout_enabled is True
     assert loaded.initialized
 
 
@@ -104,6 +106,7 @@ def test_load_rejects_non_object_json(tmp_path: Path, payload: object) -> None:
         ("watch_enabled", 1),
         ("launch_at_login", "false"),
         ("prompt_timeout_seconds", 45.0),
+        ("prompt_timeout_enabled", 1),
         ("initialized", 1),
         ("ocr_enabled", 1),
         ("quiet_intake", 1),

@@ -64,6 +64,7 @@ class SettingsPayload(TypedDict):
     extensions: str
     minimum_file_size: int
     prompt_timeout_seconds: int
+    prompt_timeout_enabled: bool
     reminder_lead_days: int
     filename_template: str
     theme: str
@@ -1361,10 +1362,16 @@ class SettingsPage(QWidget):
         self.minimum_size.setRange(0, 100 * 1024 * 1024)
         self.minimum_size.setSuffix(_(" bytes"))
         form.addRow(_("Tamanho mínimo"), self.minimum_size)
+        self.auto_close_check = QCheckBox(_("Fechar o popup automaticamente"))
+        self.auto_close_check.setToolTip(
+            _("Sem esta opção, o popup fica aberto até escolheres uma ação.")
+        )
+        form.addRow(self.auto_close_check)
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(10, 300)
         self.timeout_spin.setSuffix(" s")
         form.addRow(_("Tempo do popup"), self.timeout_spin)
+        self.auto_close_check.toggled.connect(self.timeout_spin.setEnabled)
         self.reminder_spin = QSpinBox()
         self.reminder_spin.setRange(0, 30)
         self.reminder_spin.setSuffix(_(" dias"))
@@ -1444,6 +1451,8 @@ class SettingsPage(QWidget):
         self.template_edit.setCursorPosition(0)
         self.minimum_size.setValue(max(0, config.minimum_file_size))
         self.timeout_spin.setValue(config.prompt_timeout_seconds)
+        self.auto_close_check.setChecked(config.prompt_timeout_enabled)
+        self.timeout_spin.setEnabled(config.prompt_timeout_enabled)
         self.reminder_spin.setValue(config.reminder_lead_days)
         theme_index = self.theme_combo.findData(config.theme)
         self.theme_combo.setCurrentIndex(theme_index if theme_index >= 0 else 0)
@@ -1476,6 +1485,7 @@ class SettingsPage(QWidget):
             "filename_template": self.template_edit.text().strip(),
             "minimum_file_size": self.minimum_size.value(),
             "prompt_timeout_seconds": self.timeout_spin.value(),
+            "prompt_timeout_enabled": self.auto_close_check.isChecked(),
             "reminder_lead_days": self.reminder_spin.value(),
             "theme": str(self.theme_combo.currentData()),
             "language": str(self.language_combo.currentData()),

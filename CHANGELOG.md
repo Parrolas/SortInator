@@ -2,6 +2,16 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.14.3 - 2026-09-12
+
+### Changed
+
+- The filing popup now waits for your decision by default instead of closing
+  on a timer; dismiss it with "Mais tarde", the new ✕ corner button, Esc or
+  the window close button.
+- Settings gained "Fechar o popup automaticamente": enable it to restore the
+  countdown that closes the popup after the configured seconds.
+
 ## 0.14.2 - 2026-09-12
 
 ### Fixed

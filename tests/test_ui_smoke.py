@@ -42,7 +42,7 @@ from organizador.ui.dialogs import (
     TaskDialog,
 )
 from organizador.ui.main_window import MainWindow
-from organizador.ui.pages import SettingsPayload
+from organizador.ui.pages import SettingsPage, SettingsPayload
 from organizador.ui.prompt import FilingPrompt
 from organizador.ui.theme import apply_theme, get_theme
 from organizador.ui.tray import TrayIcon
@@ -131,6 +131,35 @@ def test_settings_ocr_checkbox_round_trips_through_payload(
     assert payloads[0]["ocr_enabled"] is True
     window.allow_close = True
     window.close()
+
+
+def test_settings_page_gates_the_popup_timeout(
+    qt_app: QApplication,
+    app_config: AppConfig,
+) -> None:
+    page = SettingsPage(app_config)
+    try:
+        assert not page.auto_close_check.isChecked()
+        assert not page.timeout_spin.isEnabled()
+
+        page.auto_close_check.setChecked(True)
+        assert page.timeout_spin.isEnabled()
+
+        app_config.prompt_timeout_seconds = 90
+        app_config.prompt_timeout_enabled = True
+        page.load_config(app_config)
+        assert page.auto_close_check.isChecked()
+        assert page.timeout_spin.isEnabled()
+        assert page.timeout_spin.value() == 90
+
+        payloads: list[SettingsPayload] = []
+        page.save_requested.connect(payloads.append)
+        page._save()
+        assert payloads and payloads[0]["prompt_timeout_enabled"] is True
+        assert payloads[0]["prompt_timeout_seconds"] == 90
+    finally:
+        page.deleteLater()
+        qt_app.processEvents()
 
 
 def test_settings_quiet_checkbox_round_trips_through_payload(
@@ -583,6 +612,80 @@ def test_filing_prompt_elides_long_subject_names(
         prompt.hide()
 
 
+def test_filing_prompt_waits_for_a_decision_by_default(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+) -> None:
+    inbox_path = app_config.inbox_dir / "aula.pdf"
+    inbox_path.write_bytes(b"conteudo para o teste do temporizador")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+    prompt = FilingPrompt(timeout_seconds=30)
+    later: list[int] = []
+    prompt.later_requested.connect(later.append)
+    try:
+        guess = guess_filing(item.original_name, [subject])
+        prompt.show_item(item, [subject], guess)
+        qt_app.processEvents()
+
+        assert not prompt.timer.isActive()
+        assert not prompt.countdown_label.isVisible()
+        assert prompt.close_button.toolTip() == "Fechar"
+        assert prompt.close_button.accessibleName() == "Fechar"
+
+        prompt.close_button.click()
+        qt_app.processEvents()
+
+        assert later == [item.id]
+        assert prompt.current_item_id is None
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
+def test_filing_prompt_counts_down_when_auto_close_is_enabled(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+) -> None:
+    inbox_path = app_config.inbox_dir / "aula.pdf"
+    inbox_path.write_bytes(b"conteudo para o teste do temporizador")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+    prompt = FilingPrompt(timeout_seconds=30, auto_close=True)
+    later: list[int] = []
+    prompt.later_requested.connect(later.append)
+    try:
+        guess = guess_filing(item.original_name, [subject])
+        prompt.show_item(item, [subject], guess)
+        qt_app.processEvents()
+
+        assert prompt.timer.isActive()
+        assert prompt.countdown_label.isVisible()
+        assert "30s" in prompt.countdown_label.text()
+
+        prompt.remaining = 1
+        prompt._tick()
+        qt_app.processEvents()
+
+        assert later == [item.id]
+        assert not prompt.timer.isActive()
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
 def test_subject_colour_button_keeps_readable_text(qt_app: QApplication) -> None:
     dialog = SubjectDialog()
 
@@ -658,6 +761,7 @@ def test_startup_registration_is_reverted_when_settings_save_fails(
         "filename_template": "{nome_original}",
         "minimum_file_size": 1024,
         "prompt_timeout_seconds": 45,
+        "prompt_timeout_enabled": True,
         "reminder_lead_days": 2,
         "theme": "escuro",
         "language": "pt",
@@ -2118,9 +2222,9 @@ def test_downloads_during_update_preparation_are_deferred_and_released(
         assert [candidate for _, candidate in controller._deferred_downloads] == [path]
 
         controller._on_update_install_finished("falha simulada")
-        _pump_until(qt_app, lambda: controller.database.count_inbox_items() == 1)
+        _pump_until(qt_app, lambda: not path.exists())
 
-        assert not path.exists()
+        assert controller.database.count_inbox_items() == 1
         assert controller._deferred_downloads == []
     finally:
         _close_controller(qt_app, controller)

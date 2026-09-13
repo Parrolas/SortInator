@@ -103,6 +103,7 @@ class AppConfig:
     watch_enabled: bool = True
     launch_at_login: bool = False
     prompt_timeout_seconds: int = 45
+    prompt_timeout_enabled: bool = False
     reminder_lead_days: int = 2
     filename_template: str = DEFAULT_FILENAME_TEMPLATE
     theme: str = DEFAULT_THEME
@@ -244,6 +245,7 @@ class AppConfig:
                 watch_enabled=_bool_setting(raw, "watch_enabled", True),
                 launch_at_login=_bool_setting(raw, "launch_at_login", False),
                 prompt_timeout_seconds=_int_setting(raw, "prompt_timeout_seconds", 45),
+                prompt_timeout_enabled=_bool_setting(raw, "prompt_timeout_enabled", False),
                 reminder_lead_days=_int_setting(raw, "reminder_lead_days", 2),
                 filename_template=_str_setting(raw, "filename_template", DEFAULT_FILENAME_TEMPLATE),
                 theme=_str_setting(raw, "theme", DEFAULT_THEME),

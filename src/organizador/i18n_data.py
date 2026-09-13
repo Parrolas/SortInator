@@ -445,6 +445,10 @@ EN_STRINGS: dict[str, str] = {
     "Tarefas e prazos": "Tasks and deadlines",
     "Tema": "Theme",
     "Tempo do popup": "Popup timeout",
+    "Fechar o popup automaticamente": "Close the popup automatically",
+    "Sem esta opção, o popup fica aberto até escolheres uma ação.": (
+        "Without this option, the popup stays open until you choose an action."
+    ),
     "Tipo": "Type",
     "Tipo de documento": "Document type",
     "Todos vão para a mesma disciplina e tipo. Cada ficheiro mantém o seu próprio histórico; só a última organização pode ser desfeita.": (
@@ -1244,6 +1248,10 @@ ES_STRINGS: dict[str, str] = {
     "Tarefas e prazos": "Tareas y plazos",
     "Tema": "Tema",
     "Tempo do popup": "Tiempo del popup",
+    "Fechar o popup automaticamente": "Cerrar el popup automáticamente",
+    "Sem esta opção, o popup fica aberto até escolheres uma ação.": (
+        "Sin esta opción, el popup permanece abierto hasta que elijas una acción."
+    ),
     "Tipo": "Tipo",
     "Tipo de documento": "Tipo de documento",
     "Todos vão para a mesma disciplina e tipo. Cada ficheiro mantém o seu próprio histórico; só a última organização pode ser desfeita.": (
@@ -2082,6 +2090,10 @@ FR_STRINGS: dict[str, str] = {
     "Tarefas e prazos": "Tâches et échéances",
     "Tema": "Thème",
     "Tempo do popup": "Durée du popup",
+    "Fechar o popup automaticamente": "Fermer le popup automatiquement",
+    "Sem esta opção, o popup fica aberto até escolheres uma ação.": (
+        "Sans cette option, le popup reste ouvert jusqu'à ce que tu choisisses une action."
+    ),
     "Tipo": "Type",
     "Tipo de documento": "Type de document",
     "Todos vão para a mesma disciplina e tipo. Cada ficheiro mantém o seu próprio histórico; só a última organização pode ser desfeita.": (

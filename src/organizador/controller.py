@@ -209,7 +209,9 @@ class AppController(QObject):
         self._abort_update_install = False
 
         self.main_window = MainWindow(self.database, config)
-        self.prompt = FilingPrompt(config.prompt_timeout_seconds)
+        self.prompt = FilingPrompt(
+            config.prompt_timeout_seconds, auto_close=config.prompt_timeout_enabled
+        )
         self.tray = TrayIcon(self)
         self._native_notifications = False
         self._notification_dialog: NotificationFilesDialog | None = None
@@ -1660,6 +1662,7 @@ class AppController(QObject):
                 raise ValueError("Adiciona pelo menos uma extensão aceite.")
             self.config.minimum_file_size = int(values["minimum_file_size"])
             self.config.prompt_timeout_seconds = int(values["prompt_timeout_seconds"])
+            self.config.prompt_timeout_enabled = bool(values["prompt_timeout_enabled"])
             self.config.reminder_lead_days = int(values["reminder_lead_days"])
             self.config.filename_template = str(values["filename_template"])
             self.config.theme = str(values["theme"])
@@ -1684,7 +1687,9 @@ class AppController(QObject):
             self._restore_config(previous)
             self.main_window.settings_page.set_status(str(exc), error=True)
             return
-        self.prompt.set_timeout(self.config.prompt_timeout_seconds)
+        self.prompt.set_timeout(
+            self.config.prompt_timeout_seconds, auto_close=self.config.prompt_timeout_enabled
+        )
         application = QApplication.instance()
         if isinstance(application, QApplication):
             apply_theme(application, get_theme(self.config.theme))
@@ -1715,6 +1720,7 @@ class AppController(QObject):
         self.config.watch_enabled = previous.watch_enabled
         self.config.launch_at_login = previous.launch_at_login
         self.config.prompt_timeout_seconds = previous.prompt_timeout_seconds
+        self.config.prompt_timeout_enabled = previous.prompt_timeout_enabled
         self.config.reminder_lead_days = previous.reminder_lead_days
         self.config.filename_template = previous.filename_template
         self.config.theme = previous.theme

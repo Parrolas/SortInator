@@ -553,6 +553,22 @@ QPushButton[chip="true"]:checked {{
     background: {theme.teal_fill};
     border-color: {theme.teal_fill};
 }}
+QPushButton#PromptClose {{
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: {theme.muted};
+    font-size: 16px;
+}}
+QPushButton#PromptClose:hover {{
+    background: {theme.button_hover};
+    color: {theme.text};
+}}
 QLineEdit, QTextEdit, QComboBox, QDateEdit, QSpinBox {{
     min-height: 38px;
     padding: 0 10px;

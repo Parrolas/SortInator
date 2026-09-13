@@ -35,9 +35,16 @@ class FilingPrompt(QWidget):
     return_requested = Signal(int)
     reveal_requested = Signal(object)
 
-    def __init__(self, timeout_seconds: int = 45, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        timeout_seconds: int = 45,
+        *,
+        auto_close: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.timeout_seconds = timeout_seconds
+        self.auto_close = auto_close
         self.current_item_id: int | None = None
         self.selected_subject_id: int | None = None
         self.remaining = timeout_seconds
@@ -77,6 +84,13 @@ class FilingPrompt(QWidget):
         top.addLayout(heading_copy, 1)
         self.countdown_label = label("", "Muted")
         top.addWidget(self.countdown_label, 0, Qt.AlignmentFlag.AlignTop)
+        self.close_button = QPushButton("✕")
+        self.close_button.setObjectName("PromptClose")
+        self.close_button.setToolTip(_("Fechar"))
+        self.close_button.setAccessibleName(_("Fechar"))
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.clicked.connect(self._later)
+        top.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
         card_layout.addLayout(top)
 
         self.duplicate_banner = QFrame()
@@ -260,7 +274,7 @@ class FilingPrompt(QWidget):
 
         self.remaining = self.timeout_seconds
         self._update_countdown()
-        self.timer.start()
+        self._sync_countdown()
         self._place_and_animate()
         self.show()
         self.raise_()
@@ -276,10 +290,11 @@ class FilingPrompt(QWidget):
         self.show()
         self.raise_()
 
-    def set_timeout(self, seconds: int) -> None:
-        """Update the idle timeout for future prompts."""
+    def set_timeout(self, seconds: int, *, auto_close: bool) -> None:
+        """Update auto-close behaviour for future prompts."""
 
         self.timeout_seconds = max(10, seconds)
+        self.auto_close = auto_close
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.current_item_id is not None and not self._closing_by_action:
@@ -421,6 +436,15 @@ class FilingPrompt(QWidget):
         self._closing_by_action = True
         self.hide()
         self._closing_by_action = False
+
+    def _sync_countdown(self) -> None:
+        """Start or stop the auto-close countdown to match the setting."""
+
+        self.countdown_label.setVisible(self.auto_close)
+        if self.auto_close:
+            self.timer.start()
+        else:
+            self.timer.stop()
 
     def _tick(self) -> None:
         self.remaining -= 1

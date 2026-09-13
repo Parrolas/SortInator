@@ -97,6 +97,7 @@ def test_theme_round_trips_through_settings(
         "filename_template": "{nome_original}",
         "minimum_file_size": 1024,
         "prompt_timeout_seconds": 45,
+        "prompt_timeout_enabled": False,
         "reminder_lead_days": 2,
         "theme": "claro",
         "language": "pt",
