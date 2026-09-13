@@ -42,6 +42,7 @@ from organizador.models import (
     Subject,
 )
 from organizador.reconcile import DISMISSIBLE_FINDING_REASONS, visible_findings
+from organizador.recovery import USER_MARKER, BundleInfo
 from organizador.ui import theme as ui_theme
 from organizador.ui.dialogs import TaskDialog
 from organizador.ui.widgets import (
@@ -1308,6 +1309,10 @@ class SettingsPage(QWidget):
     """File-system, intake and login settings."""
 
     save_requested = Signal(object)
+    backup_created_requested = Signal()
+    backup_export_requested = Signal()
+    backup_manager_requested = Signal()
+    backup_open_folder_requested = Signal()
 
     def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1416,6 +1421,50 @@ class SettingsPage(QWidget):
         body_area, _container, body_layout = _scroll_list()
         body_layout.setSpacing(18)
         body_layout.addWidget(panel)
+
+        backup_panel = QFrame()
+        backup_panel.setObjectName("Panel")
+        backup_layout = QVBoxLayout(backup_panel)
+        backup_layout.setContentsMargins(22, 24, 22, 26)
+        backup_layout.setSpacing(14)
+        backup_layout.addWidget(label(_("Cópias de segurança"), "SectionTitle"))
+        self.backup_status = label(_("Ainda não há cópias de segurança."), "Muted")
+        self.backup_status.setWordWrap(True)
+        backup_layout.addWidget(self.backup_status)
+        backup_row = QHBoxLayout()
+        backup_row.setSpacing(8)
+        self.backup_create_button = button(_("Criar cópia agora"), variant="primary")
+        self.backup_create_button.clicked.connect(
+            lambda _checked=False: self.backup_created_requested.emit()
+        )
+        self.backup_export_button = button(_("Criar e exportar .zip…"))
+        self.backup_export_button.clicked.connect(
+            lambda _checked=False: self.backup_export_requested.emit()
+        )
+        self.backup_manage_button = button(_("Restaurar…"))
+        self.backup_manage_button.clicked.connect(
+            lambda _checked=False: self.backup_manager_requested.emit()
+        )
+        self.backup_folder_button = button(_("Abrir pasta"), variant="quiet")
+        self.backup_folder_button.clicked.connect(
+            lambda _checked=False: self.backup_open_folder_requested.emit()
+        )
+        backup_row.addWidget(self.backup_create_button)
+        backup_row.addWidget(self.backup_export_button)
+        backup_row.addWidget(self.backup_manage_button)
+        backup_row.addStretch(1)
+        backup_row.addWidget(self.backup_folder_button)
+        backup_layout.addLayout(backup_row)
+        backup_note = label(
+            _(
+                "As cópias guardam o catálogo e as definições. "
+                "Os teus documentos não são alterados."
+            ),
+            "Muted",
+        )
+        backup_note.setWordWrap(True)
+        backup_layout.addWidget(backup_note)
+        body_layout.addWidget(backup_panel)
         layout.addWidget(body_area, 1)
 
         action_row = QHBoxLayout()
@@ -1471,6 +1520,50 @@ class SettingsPage(QWidget):
         self.status_label.setText(message)
         self.status_label.style().unpolish(self.status_label)
         self.status_label.style().polish(self.status_label)
+
+    def set_backup_inventory(self, bundles: tuple[BundleInfo, ...]) -> None:
+        """Summarize the user snapshots in the backup panel."""
+
+        user_bundles = [info for info in bundles if info.kind == USER_MARKER]
+        if not user_bundles:
+            self.backup_status.setObjectName("Muted")
+            self.backup_status.setText(_("Ainda não há cópias de segurança."))
+            return
+        total = sum(info.size_bytes for info in user_bundles)
+        when = user_bundles[0].created_at.astimezone().strftime("%d/%m/%Y %H:%M")
+        self.backup_status.setObjectName("Muted")
+        if len(user_bundles) == 1:
+            self.backup_status.setText(
+                _("Última cópia: {when} · {size}").format(when=when, size=format_size(total))
+            )
+        else:
+            self.backup_status.setText(
+                _("Última cópia: {when} · {count} cópias · {size}").format(
+                    when=when, count=len(user_bundles), size=format_size(total)
+                )
+            )
+        self.backup_status.style().unpolish(self.backup_status)
+        self.backup_status.style().polish(self.backup_status)
+
+    def set_backup_busy(self, busy: bool) -> None:
+        """Lock the backup actions while a snapshot is being processed."""
+
+        for control in (
+            self.backup_create_button,
+            self.backup_export_button,
+            self.backup_manage_button,
+        ):
+            control.setEnabled(not busy)
+        if busy:
+            self.backup_status.setText(_("A processar a cópia de segurança…"))
+
+    def set_backup_status(self, message: str, *, error: bool = False) -> None:
+        """Show backup feedback without touching the settings status line."""
+
+        self.backup_status.setObjectName("ErrorText" if error else "Muted")
+        self.backup_status.setText(message)
+        self.backup_status.style().unpolish(self.backup_status)
+        self.backup_status.style().polish(self.backup_status)
 
     def _choose_folder(self, target: QLineEdit) -> None:
         selected = QFileDialog.getExistingDirectory(self, _("Escolher pasta"), target.text())

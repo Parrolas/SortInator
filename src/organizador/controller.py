@@ -7,6 +7,7 @@ import logging
 import os
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -18,7 +19,14 @@ from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QProgressDialog, QSystemTrayIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QMessageBox,
+    QProgressDialog,
+    QSystemTrayIcon,
+)
 
 from organizador import duplicates, notifications, ocr, updater
 from organizador.classifier import guess_filing
@@ -47,9 +55,14 @@ from organizador.reconcile import (
 )
 from organizador.reconcile import apply as apply_reconciliation
 from organizador.reconcile import scan as scan_reconciliation
-from organizador.recovery import RecoveryBundle, RecoveryCoordinator
+from organizador.recovery import (
+    BundleInfo,
+    RecoveryBundle,
+    RecoveryCoordinator,
+)
 from organizador.startup import refresh_windows_integration, set_launch_at_login
 from organizador.ui.dialogs import (
+    BackupListDialog,
     BulkFilingDialog,
     OnboardingDialog,
     SubjectDialog,
@@ -144,6 +157,15 @@ class _BulkJob:
 
 
 @dataclass(frozen=True, slots=True)
+class _BackupOutcome:
+    """One finished backup operation, marshalled to the GUI thread."""
+
+    kind: str
+    result: object
+    error: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class _BulkResult:
     handled: tuple[int, ...]
     filed: int
@@ -170,6 +192,7 @@ class AppController(QObject):
     transfer_finished = Signal(object)
     update_check_finished = Signal(object, bool, int)
     update_install_finished = Signal(object)
+    backup_finished = Signal(object)
     windows_integration_ready = Signal(bool)
 
     def __init__(self, config: AppConfig, database: Database | None = None) -> None:
@@ -236,6 +259,7 @@ class AppController(QObject):
         self._bulk_filing_in_flight = False
         self._deferred_downloads: list[tuple[int, Path | ExistingDownload]] = []
         self._deferred_download_keys: set[str] = set()
+        self._backup_dialog: BackupListDialog | None = None
 
         self._intake_notice_names: list[str] = []
         self._intake_notice_timer = QTimer(self)
@@ -319,6 +343,7 @@ class AppController(QObject):
             ).start()
 
         self._refresh()
+        self._refresh_backup_page()
         if background and state.configured and not smoke_test:
             self.main_window.hide()
         else:
@@ -467,6 +492,7 @@ class AppController(QObject):
         self.tray.quit_requested.connect(self.shutdown)
         self.update_check_finished.connect(self._on_update_check_finished)
         self.update_install_finished.connect(self._on_update_install_finished)
+        self.backup_finished.connect(self._finish_backup)
         self.main_window.hidden_to_tray.connect(self._hidden_to_tray)
         self.main_window.quit_requested.connect(self.shutdown)
 
@@ -499,6 +525,10 @@ class AppController(QObject):
         self.main_window.subjects_page.view_files_requested.connect(self._view_subject_files)
         self.main_window.subjects_page.open_folder.connect(self._open_path)
         self.main_window.settings_page.save_requested.connect(self._save_settings)
+        self.main_window.settings_page.backup_created_requested.connect(self.create_user_backup)
+        self.main_window.settings_page.backup_export_requested.connect(self.export_new_backup)
+        self.main_window.settings_page.backup_manager_requested.connect(self.open_backup_manager)
+        self.main_window.settings_page.backup_open_folder_requested.connect(self.open_backup_folder)
 
         self.prompt.filing_requested.connect(self._file_item)
         self.prompt.later_requested.connect(self._prompt_finished)
@@ -1729,6 +1759,231 @@ class AppController(QObject):
         self.config.ocr_enabled = previous.ocr_enabled
         self.config.quiet_intake = previous.quiet_intake
         self.config.initialized = previous.initialized
+
+    def create_user_backup(self, export_dir: Path | None = None) -> None:
+        """Create a user snapshot, optionally exporting a portable archive."""
+
+        if self._shutting_down or self._update_installing or self._pending_transfers:
+            self.main_window.settings_page.set_backup_status(
+                _("Espera que as operações de ficheiros terminem antes de criar a cópia."),
+                error=True,
+            )
+            return
+        self.main_window.settings_page.set_backup_busy(True)
+        coordinator = RecoveryCoordinator(self.config.data_dir)
+
+        def work() -> None:
+            try:
+                bundle = coordinator.create_snapshot()
+                archive = (
+                    coordinator.export_bundle_zip(bundle.path, export_dir)
+                    if export_dir is not None
+                    else None
+                )
+            except Exception as exc:
+                LOGGER.exception("Could not create a backup")
+                outcome = _BackupOutcome(kind="create", result=None, error=str(exc))
+            else:
+                outcome = _BackupOutcome(kind="create", result=archive or bundle.path, error=None)
+            self.backup_finished.emit(outcome)
+
+        threading.Thread(target=work, name="user-backup", daemon=True).start()
+
+    def export_new_backup(self) -> None:
+        """Create a snapshot and export it to a folder the user picks."""
+
+        selected = QFileDialog.getExistingDirectory(self.main_window, _("Escolher pasta"))
+        if not selected:
+            return
+        self.create_user_backup(Path(selected))
+
+    def open_backup_folder(self) -> None:
+        self._open_path(self.config.data_dir / "backups")
+
+    def open_backup_manager(self) -> None:
+        """Show the backup list and wire its restore, export and delete actions."""
+
+        dialog = BackupListDialog(self._list_bundles(), self.main_window)
+        self._backup_dialog = dialog
+        dialog.import_requested.connect(lambda: self._import_backup(dialog))
+        dialog.restore_requested.connect(self._request_restore)
+        dialog.delete_requested.connect(lambda bundle: self._delete_backup(bundle, dialog))
+        dialog.export_requested.connect(self._export_backup)
+        try:
+            dialog.exec()
+        finally:
+            self._backup_dialog = None
+
+    def _list_bundles(self) -> tuple[BundleInfo, ...]:
+        try:
+            return RecoveryCoordinator(self.config.data_dir).list_bundles()
+        except Exception:
+            LOGGER.warning("Could not list backups", exc_info=True)
+            return ()
+
+    def _refresh_backup_page(self) -> None:
+        self.main_window.settings_page.set_backup_inventory(self._list_bundles())
+
+    def _import_backup(self, dialog: BackupListDialog) -> None:
+        selected = QFileDialog.getOpenFileName(
+            dialog,
+            _("Importar cópia de segurança"),
+            str(Path.home()),
+            _("Cópias de segurança (*.zip)"),
+        )
+        if not selected or not selected[0]:
+            return
+        zip_path = Path(selected[0])
+        self.main_window.settings_page.set_backup_busy(True)
+        coordinator = RecoveryCoordinator(self.config.data_dir)
+
+        def work() -> None:
+            try:
+                coordinator.import_bundle_zip(zip_path)
+            except Exception as exc:
+                LOGGER.exception("Could not import a backup")
+                outcome = _BackupOutcome(kind="import", result=None, error=str(exc))
+            else:
+                outcome = _BackupOutcome(kind="import", result=zip_path, error=None)
+            self.backup_finished.emit(outcome)
+
+        threading.Thread(target=work, name="backup-import", daemon=True).start()
+
+    def _export_backup(self, bundle: BundleInfo) -> None:
+        suggested = f"Organizador-backup-{bundle.created_at:%Y-%m-%d}.zip"
+        selected = QFileDialog.getSaveFileName(
+            self._backup_dialog or self.main_window,
+            _("Exportar cópia de segurança"),
+            str(Path.home() / suggested),
+            _("Cópias de segurança (*.zip)"),
+        )
+        if not selected or not selected[0]:
+            return
+        archive_path = Path(selected[0])
+        if archive_path.suffix.casefold() != ".zip":
+            archive_path = archive_path.with_name(f"{archive_path.name}.zip")
+        self.main_window.settings_page.set_backup_busy(True)
+        coordinator = RecoveryCoordinator(self.config.data_dir)
+
+        def work() -> None:
+            try:
+                archive = coordinator.export_bundle_zip(bundle.path, archive_path)
+            except Exception as exc:
+                LOGGER.exception("Could not export a backup")
+                outcome = _BackupOutcome(kind="export", result=None, error=str(exc))
+            else:
+                outcome = _BackupOutcome(kind="export", result=archive, error=None)
+            self.backup_finished.emit(outcome)
+
+        threading.Thread(target=work, name="backup-export", daemon=True).start()
+
+    def _delete_backup(self, bundle: BundleInfo, dialog: BackupListDialog) -> None:
+        answer = QMessageBox.question(
+            dialog,
+            _("Remover cópia"),
+            _("Remover a cópia de {when}? Esta ação não pode ser desfeita.").format(
+                when=bundle.created_at.astimezone().strftime("%d/%m/%Y %H:%M")
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            RecoveryCoordinator(self.config.data_dir).delete_bundle(bundle.path)
+        except Exception as exc:
+            LOGGER.exception("Could not delete a backup")
+            QMessageBox.warning(self.main_window, _("Não foi possível remover"), str(exc))
+            return
+        dialog.set_bundles(self._list_bundles())
+        self._refresh_backup_page()
+
+    def _request_restore(self, bundle: BundleInfo) -> None:
+        if self._shutting_down or self._update_installing or self._pending_transfers:
+            QMessageBox.warning(
+                self.main_window,
+                _("Não foi possível restaurar"),
+                _("Espera que as operações de ficheiros terminem antes de restaurar."),
+            )
+            return
+        answer = QMessageBox.question(
+            self.main_window,
+            _("Restaurar cópia de segurança"),
+            _(
+                "Os dados atuais serão substituídos pela cópia de {when} e a app vai "
+                "reiniciar. Os teus documentos não são alterados. Continuar?"
+            ).format(when=bundle.created_at.astimezone().strftime("%d/%m/%Y %H:%M")),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            RecoveryCoordinator(self.config.data_dir).request_restore(bundle.path)
+        except Exception as exc:
+            LOGGER.exception("Could not stage a restore")
+            QMessageBox.warning(self.main_window, _("Não foi possível restaurar"), str(exc))
+            return
+        if self._backup_dialog is not None:
+            self._backup_dialog.accept()
+        self._relaunch_for_restore()
+
+    def _relaunch_for_restore(self) -> None:
+        """Reopen the app once this process exits so the staged restore applies."""
+
+        if not updater.is_frozen() or os.name != "nt":
+            QMessageBox.information(
+                self.main_window,
+                _("Restaurar cópia de segurança"),
+                _("Fecha e reabre o Organizador para concluir a reposição."),
+            )
+            self.shutdown()
+            return
+        executable = Path(sys.executable)
+        command = (
+            "Wait-Process -Id {pid} -ErrorAction SilentlyContinue; Start-Process -FilePath '{exe}'"
+        ).format(pid=os.getpid(), exe=str(executable).replace("'", "''"))
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except OSError:
+            LOGGER.exception("Could not schedule the relaunch after a restore")
+            QMessageBox.information(
+                self.main_window,
+                _("Restaurar cópia de segurança"),
+                _("Fecha e reabre o Organizador para concluir a reposição."),
+            )
+        self.shutdown()
+
+    def _finish_backup(self, outcome: object) -> None:
+        if not isinstance(outcome, _BackupOutcome):
+            LOGGER.error("Ignoring malformed backup outcome")
+            return
+        page = self.main_window.settings_page
+        page.set_backup_busy(False)
+        if outcome.error is not None:
+            page.set_backup_status(
+                _("Não foi possível concluir a cópia: {error}").format(error=outcome.error),
+                error=True,
+            )
+            return
+        if outcome.kind == "import" and self._backup_dialog is not None:
+            self._backup_dialog.set_bundles(self._list_bundles())
+        self._refresh_backup_page()
+        if outcome.kind == "import":
+            page.set_backup_status(_("Cópia importada. Escolhe-a na lista para restaurar."))
+        elif outcome.kind == "export":
+            page.set_backup_status(
+                _("Cópia exportada: {name}").format(name=Path(str(outcome.result)).name)
+            )
+        elif outcome.result is not None and Path(str(outcome.result)).suffix.casefold() == ".zip":
+            page.set_backup_status(
+                _("Cópia criada e exportada: {name}").format(name=Path(str(outcome.result)).name)
+            )
+        else:
+            page.set_backup_status(_("Cópia de segurança criada."))
 
     def _set_paused(self, paused: bool) -> None:
         if self._return_in_flight:

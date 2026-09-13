@@ -1,13 +1,15 @@
-"""Crash-safe backup coordination around SQLite schema migrations."""
+"""Crash-safe backup coordination for migrations and user snapshots."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import logging
 import os
 import shutil
 import tempfile
+import zipfile
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,6 +24,8 @@ from organizador.db import (
     NewerDatabaseError,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 BUNDLE_FORMAT_VERSION = 1
 DATABASE_BACKUP_NAME = "database.sqlite3"
 SETTINGS_BACKUP_NAME = "settings.bin"
@@ -31,21 +35,57 @@ PENDING_MARKER = "pending"
 HEALTHY_MARKER = "healthy"
 FAILED_MARKER = "failed"
 QUARANTINED_MARKER = "quarantined"
+USER_MARKER = "user"
+PRE_RESTORE_MARKER = "pre_restore"
+RESTORE_REQUEST_NAME = "restore-request.json"
+RESTORE_REQUEST_FAILED_NAME = "restore-request-failed.json"
+REQUEST_FORMAT_VERSION = 1
 _PROTECTED_MARKERS = (PENDING_MARKER, FAILED_MARKER, QUARANTINED_MARKER)
+_AUTOMATIC_KINDS = ("migration", "pre_restore")
+_MAX_MANIFEST_BYTES = 1024 * 1024
 
 
 class RecoveryError(RuntimeError):
-    """A migration backup could not be trusted or restored safely."""
+    """A backup could not be trusted, restored or exported safely."""
 
 
 @dataclass(frozen=True, slots=True)
 class RecoveryBundle:
-    """A validated migration snapshot and its on-disk state directory."""
+    """A validated snapshot and its on-disk state directory."""
 
     path: Path
     created_at: datetime
     database_user_version: int
     settings_present: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BundleInfo:
+    """Lightweight inventory entry that never re-hashes the database."""
+
+    path: Path
+    created_at: datetime
+    database_user_version: int
+    settings_present: bool
+    kind: str
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreOutcome:
+    """A staged restore that was applied at startup."""
+
+    restored_from: datetime
+    bundle_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _Manifest:
+    created_at: datetime
+    user_version: int
+    settings_present: bool
+    database_entry: dict[Any, Any]
+    settings_entry: dict[Any, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +184,79 @@ class RecoveryCoordinator:
                     _write_atomic(bundle_path / FAILED_MARKER, b"")
             raise
 
+    def create_snapshot(self, marker: str = USER_MARKER) -> RecoveryBundle:
+        """Publish a validated on-demand snapshot of the current data.
+
+        ``marker`` names the bundle kind (``user`` or ``pre_restore``); the
+        marker file makes the bundle visible to retention and deletion rules.
+        """
+
+        marker = marker.strip()
+        if not marker or not marker.replace("_", "").isalnum() or not marker.isascii():
+            raise RecoveryError("The snapshot marker is invalid.")
+        if self.database_path.is_symlink():
+            raise RecoveryError("The database path must not be a symbolic link.")
+        if not self.database_path.is_file():
+            raise RecoveryError("There is no database to back up.")
+        database = Database(self.database_path)
+        database.validate_health().require_healthy()
+        inspection = database.inspect_schema()
+        if inspection.user_version is not None and inspection.user_version > SCHEMA_VERSION:
+            raise NewerDatabaseError(
+                f"A base de dados pertence a uma versão mais recente ({inspection.user_version})."
+            )
+        if self.settings_path.is_symlink():
+            raise RecoveryError("The settings path must not be a symbolic link.")
+        if self.settings_path.exists() and not self.settings_path.is_file():
+            raise RecoveryError("The settings path is not a regular file.")
+
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
+        created_at = _utc_now()
+        bundle_path = self.backups_dir / f"{marker}-{created_at:%Y%m%dT%H%M%S%fZ}-{uuid4().hex}"
+        bundle_path.mkdir()
+        try:
+            database_backup = bundle_path / DATABASE_BACKUP_NAME
+            database.backup_to(database_backup)
+            settings_present = self.settings_path.is_file()
+            settings_backup = bundle_path / (
+                SETTINGS_BACKUP_NAME if settings_present else SETTINGS_ABSENT_NAME
+            )
+            settings_bytes = self.settings_path.read_bytes() if settings_present else b""
+            _write_atomic(settings_backup, settings_bytes)
+            manifest = {
+                "format_version": BUNDLE_FORMAT_VERSION,
+                "created_at": created_at.isoformat(),
+                "schema": {
+                    "user_version": inspection.user_version,
+                    "missing_additions": list(inspection.missing_additions),
+                },
+                "files": {
+                    "database": {
+                        "path": DATABASE_BACKUP_NAME,
+                        "sha256": _sha256_file(database_backup),
+                    },
+                    "settings": {
+                        "path": settings_backup.name,
+                        "sha256": _sha256_bytes(settings_bytes),
+                        "present": settings_present,
+                    },
+                },
+            }
+            manifest_bytes = (
+                json.dumps(manifest, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+            _write_atomic(bundle_path / MANIFEST_NAME, manifest_bytes)
+            validated = self._validate_bundle(bundle_path)
+            _write_atomic(bundle_path / marker, b"")
+            return validated.bundle
+        except BaseException:
+            if bundle_path.exists() and not any(
+                (bundle_path / state).exists() for state in (USER_MARKER, PRE_RESTORE_MARKER)
+            ):
+                with suppress(OSError):
+                    _write_atomic(bundle_path / FAILED_MARKER, b"")
+            raise
+
     def restore_pending(self) -> RecoveryBundle | None:
         """Restore the sole migration that never reached its health point."""
 
@@ -201,38 +314,263 @@ class RecoveryCoordinator:
         self.validate_migrated(bundle)
         self._transition(bundle_path, PENDING_MARKER, HEALTHY_MARKER)
 
-    def prune_healthy_backups(self) -> tuple[Path, ...]:
-        """Keep at most the newest two healthy bundles, never beyond 30 days."""
+    def prune_automatic_backups(self) -> tuple[Path, ...]:
+        """Keep the newest two automatic bundles per kind, never beyond 30 days.
+
+        User snapshots and protected recovery states are never pruned.
+        """
 
         if not self.backups_dir.is_dir():
             return ()
-        candidates: list[tuple[datetime, Path]] = []
+        cutoff = _utc_now() - timedelta(days=30)
+        buckets: dict[str, list[tuple[datetime, Path]]] = {kind: [] for kind in _AUTOMATIC_KINDS}
         for path in self.backups_dir.iterdir():
             if not path.is_dir() or path.is_symlink():
+                continue
+            kind = self._bundle_kind(path)
+            if kind not in buckets:
                 continue
             if any(
                 (path / marker).exists() or (path / marker).is_symlink()
                 for marker in _PROTECTED_MARKERS
             ):
                 continue
-            healthy = path / HEALTHY_MARKER
-            if not healthy.is_file() or healthy.is_symlink():
+            try:
+                manifest = self._decode_manifest(path)
+            except (OSError, RecoveryError, ValueError):
+                continue
+            buckets[kind].append((manifest.created_at, path))
+
+        removed: list[Path] = []
+        for entries in buckets.values():
+            entries.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+            for index, (created_at, path) in enumerate(entries):
+                if index < 2 and created_at >= cutoff:
+                    continue
+                shutil.rmtree(path)
+                removed.append(path)
+        return tuple(removed)
+
+    def list_bundles(self) -> tuple[BundleInfo, ...]:
+        """Return a lightweight inventory, newest first, without re-hashing."""
+
+        if not self.backups_dir.is_dir():
+            return ()
+        found: list[BundleInfo] = []
+        for path in self.backups_dir.iterdir():
+            if not path.is_dir() or path.is_symlink():
+                continue
+            manifest_path = path / MANIFEST_NAME
+            if not manifest_path.is_file() or manifest_path.is_symlink():
                 continue
             try:
-                validated = self._validate_bundle(path)
-            except (DatabaseHealthError, OSError, RecoveryError, ValueError):
+                manifest = self._decode_manifest(path)
+                size_bytes = (path / DATABASE_BACKUP_NAME).stat().st_size
+            except (OSError, RecoveryError, ValueError):
                 continue
-            candidates.append((validated.bundle.created_at, path))
+            found.append(
+                BundleInfo(
+                    path=path,
+                    created_at=manifest.created_at,
+                    database_user_version=manifest.user_version,
+                    settings_present=manifest.settings_present,
+                    kind=self._bundle_kind(path),
+                    size_bytes=size_bytes,
+                )
+            )
+        found.sort(key=lambda item: (item.created_at, item.path.name), reverse=True)
+        return tuple(found)
 
-        candidates.sort(key=lambda item: (item[0], item[1].name), reverse=True)
-        cutoff = _utc_now() - timedelta(days=30)
-        removed: list[Path] = []
-        for index, (created_at, path) in enumerate(candidates):
-            if index < 2 and created_at >= cutoff:
-                continue
-            shutil.rmtree(path)
-            removed.append(path)
-        return tuple(removed)
+    def validate_bundle(self, bundle_path: Path) -> RecoveryBundle:
+        """Fully validate a bundle, including every hash and the database health."""
+
+        return self._validate_bundle(bundle_path).bundle
+
+    def restore_bundle(self, bundle_path: Path) -> RecoveryBundle:
+        """Replace the live data with a fully validated bundle."""
+
+        validated = self._validate_bundle(bundle_path)
+        self._restore_bundle(validated)
+        return validated.bundle
+
+    def delete_bundle(self, bundle_path: Path) -> None:
+        """Delete one user snapshot; automatic and protected bundles stay."""
+
+        path = self._owned_bundle_path(bundle_path)
+        if self._bundle_kind(path) != USER_MARKER:
+            raise RecoveryError("Only user backups can be deleted.")
+        shutil.rmtree(path)
+
+    def export_bundle_zip(self, bundle_path: Path, destination: Path) -> Path:
+        """Write a portable archive of a validated bundle, returning its path."""
+
+        validated = self._validate_bundle(bundle_path)
+        archive = destination
+        if archive.suffix.casefold() != ".zip":
+            stamp = f"{validated.bundle.created_at:%Y-%m-%d-%H%M%S}"
+            archive = destination / f"Organizador-backup-{stamp}.zip"
+        if archive.is_symlink():
+            raise RecoveryError("The export destination must not be a symbolic link.")
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        temporary = archive.parent / f".{archive.name}-{uuid4().hex}.tmp"
+        settings_name = (
+            SETTINGS_BACKUP_NAME if validated.bundle.settings_present else SETTINGS_ABSENT_NAME
+        )
+        try:
+            with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive_file:
+                archive_file.write(validated.bundle.path / MANIFEST_NAME, MANIFEST_NAME)
+                archive_file.write(validated.database_path, DATABASE_BACKUP_NAME)
+                archive_file.write(validated.settings_path, settings_name)
+            temporary.replace(archive)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return archive
+
+    def import_bundle_zip(self, zip_path: Path) -> RecoveryBundle:
+        """Stage a portable archive as a validated user snapshot."""
+
+        archive = zip_path
+        if archive.is_symlink() or not archive.is_file():
+            raise RecoveryError("The backup archive is missing or unsafe.")
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
+        staging = self.backups_dir / f"import-{uuid4().hex}"
+        staging.mkdir()
+        try:
+            with zipfile.ZipFile(archive) as archive_file:
+                try:
+                    manifest_bytes = _read_zip_member(
+                        archive_file, MANIFEST_NAME, limit=_MAX_MANIFEST_BYTES
+                    )
+                except (KeyError, zipfile.BadZipFile) as exc:
+                    raise RecoveryError("The backup archive is not a valid bundle.") from exc
+                _write_atomic(staging / MANIFEST_NAME, manifest_bytes)
+                manifest = self._decode_manifest(staging)
+                settings_name = (
+                    SETTINGS_BACKUP_NAME if manifest.settings_present else SETTINGS_ABSENT_NAME
+                )
+                expected = {MANIFEST_NAME, DATABASE_BACKUP_NAME, settings_name}
+                if set(archive_file.namelist()) != expected:
+                    raise RecoveryError("The backup archive has unexpected contents.")
+                _copy_zip_member(archive_file, DATABASE_BACKUP_NAME, staging / DATABASE_BACKUP_NAME)
+                _copy_zip_member(archive_file, settings_name, staging / settings_name)
+            validated = self._validate_bundle(staging)
+        except BaseException as exc:
+            shutil.rmtree(staging, ignore_errors=True)
+            if isinstance(exc, zipfile.BadZipFile):
+                raise RecoveryError("The backup archive is not a valid bundle.") from exc
+            raise
+        stamp = f"{validated.bundle.created_at:%Y%m%dT%H%M%S%fZ}"
+        final = self.backups_dir / f"{USER_MARKER}-{stamp}-{uuid4().hex}"
+        staging.replace(final)
+        _write_atomic(final / USER_MARKER, b"")
+        return RecoveryBundle(
+            path=final,
+            created_at=validated.bundle.created_at,
+            database_user_version=validated.bundle.database_user_version,
+            settings_present=validated.bundle.settings_present,
+        )
+
+    def has_restore_request(self) -> bool:
+        """Return whether a staged restore is waiting for the next launch."""
+
+        request_path = self.data_dir / RESTORE_REQUEST_NAME
+        return request_path.is_file() and not request_path.is_symlink()
+
+    def request_restore(self, bundle_path: Path) -> Path:
+        """Stage a validated bundle for restoration on the next launch."""
+
+        validated = self._validate_bundle(bundle_path)
+        payload = {
+            "format_version": REQUEST_FORMAT_VERSION,
+            "created_at": _utc_now().isoformat(),
+            "bundle": str(validated.bundle.path),
+            "bundle_created_at": validated.bundle.created_at.isoformat(),
+            "manifest_sha256": _sha256_file(validated.bundle.path / MANIFEST_NAME),
+        }
+        request_path = self.data_dir / RESTORE_REQUEST_NAME
+        _write_atomic(
+            request_path,
+            (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode("utf-8"),
+        )
+        return request_path
+
+    def consume_restore_request(self) -> RestoreOutcome | None:
+        """Apply a staged restore before the application opens its data."""
+
+        request_path = self.data_dir / RESTORE_REQUEST_NAME
+        if not request_path.is_file() or request_path.is_symlink():
+            return None
+        try:
+            payload = self._decode_restore_request(request_path)
+            bundle_path = Path(str(payload["bundle"]))
+            validated = self._validate_bundle(bundle_path)
+            expected = str(payload["manifest_sha256"]).casefold()
+            actual = _sha256_file(validated.bundle.path / MANIFEST_NAME)
+            if not hmac.compare_digest(actual, expected):
+                raise RecoveryError("The requested backup changed since the request.")
+            self._snapshot_before_restore()
+            self._restore_bundle(validated)
+        except Exception as exc:
+            self._quarantine_restore_request(request_path, exc)
+            raise
+        request_path.unlink(missing_ok=True)
+        return RestoreOutcome(
+            restored_from=validated.bundle.created_at,
+            bundle_path=validated.bundle.path,
+        )
+
+    def _decode_restore_request(self, request_path: Path) -> dict[str, Any]:
+        try:
+            decoded: Any = json.loads(request_path.read_bytes())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RecoveryError("The restore request is unreadable.") from exc
+        if not isinstance(decoded, dict) or decoded.get("format_version") != REQUEST_FORMAT_VERSION:
+            raise RecoveryError("The restore request format is unsupported.")
+        bundle = decoded.get("bundle")
+        manifest_sha256 = decoded.get("manifest_sha256")
+        created_at = decoded.get("created_at")
+        if (
+            not isinstance(bundle, str)
+            or not isinstance(manifest_sha256, str)
+            or len(manifest_sha256) != 64
+            or not isinstance(created_at, str)
+        ):
+            raise RecoveryError("The restore request is malformed.")
+        return decoded
+
+    def _snapshot_before_restore(self) -> None:
+        """Protect the current data unless it is already unusable."""
+
+        try:
+            self.create_snapshot(PRE_RESTORE_MARKER)
+        except Exception:
+            LOGGER.warning("Could not snapshot the current data before restoring", exc_info=True)
+
+    def _quarantine_restore_request(self, request_path: Path, error: Exception) -> None:
+        payload = {"failed_at": _utc_now().isoformat(), "error": str(error)}
+        with suppress(OSError):
+            _write_atomic(
+                self.data_dir / RESTORE_REQUEST_FAILED_NAME,
+                (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode("utf-8"),
+            )
+        with suppress(OSError):
+            request_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _bundle_kind(bundle_path: Path) -> str:
+        if (bundle_path / USER_MARKER).is_file():
+            return USER_MARKER
+        if (bundle_path / PRE_RESTORE_MARKER).is_file():
+            return PRE_RESTORE_MARKER
+        if (bundle_path / HEALTHY_MARKER).is_file():
+            return "migration"
+        if (bundle_path / PENDING_MARKER).is_file():
+            return "pending"
+        if (bundle_path / FAILED_MARKER).is_file():
+            return "failed_recovery"
+        if (bundle_path / QUARANTINED_MARKER).is_file():
+            return "quarantined"
+        return "unmarked"
 
     def _publish_pending(self, bundle_path: Path) -> None:
         _write_atomic(bundle_path / PENDING_MARKER, b"")
@@ -252,8 +590,7 @@ class RecoveryCoordinator:
                 pending.append(path)
         return tuple(sorted(pending))
 
-    def _validate_bundle(self, bundle_path: Path) -> _ValidatedBundle:
-        bundle_path = self._owned_bundle_path(bundle_path)
+    def _decode_manifest(self, bundle_path: Path) -> _Manifest:
         manifest_path = bundle_path / MANIFEST_NAME
         if not manifest_path.is_file() or manifest_path.is_symlink():
             raise RecoveryError("The recovery manifest is missing or unsafe.")
@@ -286,18 +623,30 @@ class RecoveryCoordinator:
         settings_entry = files.get("settings")
         if not isinstance(database_entry, dict) or not isinstance(settings_entry, dict):
             raise RecoveryError("The recovery manifest file entries are invalid.")
-
-        database_path, database_sha256 = self._manifest_file(
-            bundle_path, database_entry, expected_name=DATABASE_BACKUP_NAME
-        )
         settings_present = settings_entry.get("present")
         if not isinstance(settings_present, bool):
             raise RecoveryError("The settings presence marker is invalid.")
-        expected_settings_name = SETTINGS_BACKUP_NAME if settings_present else SETTINGS_ABSENT_NAME
-        settings_path, settings_sha256 = self._manifest_file(
-            bundle_path, settings_entry, expected_name=expected_settings_name
+        return _Manifest(
+            created_at=created_at,
+            user_version=user_version,
+            settings_present=settings_present,
+            database_entry=database_entry,
+            settings_entry=settings_entry,
         )
-        if not settings_present and settings_path.stat().st_size != 0:
+
+    def _validate_bundle(self, bundle_path: Path) -> _ValidatedBundle:
+        bundle_path = self._owned_bundle_path(bundle_path)
+        manifest = self._decode_manifest(bundle_path)
+        database_path, database_sha256 = self._manifest_file(
+            bundle_path, manifest.database_entry, expected_name=DATABASE_BACKUP_NAME
+        )
+        expected_settings_name = (
+            SETTINGS_BACKUP_NAME if manifest.settings_present else SETTINGS_ABSENT_NAME
+        )
+        settings_path, settings_sha256 = self._manifest_file(
+            bundle_path, manifest.settings_entry, expected_name=expected_settings_name
+        )
+        if not manifest.settings_present and settings_path.stat().st_size != 0:
             raise RecoveryError("The settings absence marker is not empty.")
         database_sidecars = (Path(f"{database_path}-wal"), Path(f"{database_path}-shm"))
         if any(path.exists() or path.is_symlink() for path in database_sidecars):
@@ -306,9 +655,9 @@ class RecoveryCoordinator:
         return _ValidatedBundle(
             bundle=RecoveryBundle(
                 path=bundle_path,
-                created_at=created_at,
-                database_user_version=user_version,
-                settings_present=settings_present,
+                created_at=manifest.created_at,
+                database_user_version=manifest.user_version,
+                settings_present=manifest.settings_present,
             ),
             database_path=database_path,
             database_sha256=database_sha256,
@@ -434,6 +783,27 @@ def _safe_relative_path(bundle_path: Path, value: str) -> Path:
     except (OSError, ValueError) as exc:
         raise RecoveryError("A recovery manifest path escapes its bundle.") from exc
     return candidate
+
+
+def _read_zip_member(archive: zipfile.ZipFile, name: str, *, limit: int) -> bytes:
+    info = archive.getinfo(name)
+    if info.is_dir() or info.file_size > limit:
+        raise RecoveryError("A backup archive member is too large.")
+    return archive.read(name)
+
+
+def _copy_zip_member(archive: zipfile.ZipFile, name: str, destination: Path) -> None:
+    info = archive.getinfo(name)
+    if info.is_dir():
+        raise RecoveryError("A backup archive member is not a file.")
+    try:
+        with archive.open(name) as source, destination.open("xb") as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+            target.flush()
+            os.fsync(target.fileno())
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
 
 
 def _sha256_file(path: Path) -> str:

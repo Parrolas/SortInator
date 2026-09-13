@@ -224,7 +224,7 @@ def test_retention_keeps_two_recent_healthy_bundles_and_all_protected_states(
     (protected_pending.path / HEALTHY_MARKER).replace(protected_pending.path / PENDING_MARKER)
     monkeypatch.setattr(recovery_module, "_utc_now", lambda: now)
 
-    removed = coordinator.prune_healthy_backups()
+    removed = coordinator.prune_automatic_backups()
 
     assert set(removed) == {excess_recent.path, expired.path}
     assert recent_one.path.is_dir()

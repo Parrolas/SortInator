@@ -23,7 +23,7 @@ from organizador.db import Database, DatabaseHealthError, NewerDatabaseError
 from organizador.i18n import _, set_language
 from organizador.logging_setup import configure_logging, log_uncaught_exception
 from organizador.notifications import notification_token
-from organizador.recovery import RecoveryBundle, RecoveryCoordinator, RecoveryError
+from organizador.recovery import RecoveryBundle, RecoveryCoordinator, RecoveryError, RestoreOutcome
 from organizador.startup import refresh_windows_integration, unregister_windows_integration
 from organizador.ui.icons import app_icon
 from organizador.ui.theme import apply_theme, get_theme
@@ -156,6 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--notification-uri", help=argparse.SUPPRESS)
     parser.add_argument("--organize", action="append", help=argparse.SUPPRESS)
+    parser.add_argument("--backup-now", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--restore-from", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--register-integration", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--unregister-integration", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
@@ -193,6 +195,58 @@ def _warn_unreadable_settings(error: Exception) -> None:
             "Não foi possível ler as definições guardadas. "
             "A app abriu com valores seguros para poderes corrigi-las.\n\n{error}"
         ).format(error=error),
+    )
+
+
+def _print_machine(message: str) -> None:
+    """Emit machine-readable CLI output when a console is attached."""
+
+    if sys.stdout is None:
+        return
+    with suppress(Exception):
+        print(message)
+
+
+def run_ondemand_backup(data_dir: Path, destination: Path) -> int:
+    """Create a snapshot, export a portable archive and print its path."""
+
+    try:
+        coordinator = RecoveryCoordinator(data_dir)
+        bundle = coordinator.create_snapshot()
+        archive = coordinator.export_bundle_zip(bundle.path, destination)
+    except Exception as exc:
+        LOGGER.error("On-demand backup failed: %s", exc, exc_info=True)
+        _print_machine(f"ERRO: {exc}")
+        return 1
+    _print_machine(f"ZIP:{archive}")
+    return 0
+
+
+def stage_requested_restore(data_dir: Path, source: Path) -> int:
+    """Validate a backup source and stage it for the next launch."""
+
+    try:
+        coordinator = RecoveryCoordinator(data_dir)
+        if source.is_dir():
+            bundle = coordinator.validate_bundle(source)
+        else:
+            bundle = coordinator.import_bundle_zip(source)
+        request = coordinator.request_restore(bundle.path)
+    except Exception as exc:
+        LOGGER.error("Could not stage the restore: %s", exc, exc_info=True)
+        _print_machine(f"ERRO: {exc}")
+        return 1
+    _print_machine(f"PEDIDO:{request}")
+    return 0
+
+
+def _announce_restore(outcome: RestoreOutcome) -> None:
+    QMessageBox.information(
+        None,
+        _("Cópia restaurada"),
+        _("Os dados foram repostos a partir da cópia de {when}.").format(
+            when=outcome.restored_from.astimezone().strftime("%d/%m/%Y %H:%M")
+        ),
     )
 
 
@@ -242,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
         config, _error = load_config_safely(arguments.data_dir or default_data_dir())
         return 0 if refresh_windows_integration(config.allowed_extensions) else 1
     target_data_dir = arguments.data_dir or default_data_dir()
+    with suppress(Exception):
+        configure_logging(target_data_dir)
+    if arguments.backup_now is not None:
+        return run_ondemand_backup(target_data_dir, arguments.backup_now)
+    if arguments.restore_from is not None:
+        return stage_requested_restore(target_data_dir, arguments.restore_from)
     sys.excepthook = log_uncaught_exception
     _set_app_user_model_id()
     try:
@@ -326,6 +386,28 @@ def main(argv: list[str] | None = None) -> int:
     if restored is not None:
         LOGGER.warning(
             "Restored pre-migration backup from an interrupted update: %s", restored.path
+        )
+        config, config_error = reload_config_after_restore(application, target_data_dir)
+
+    restore_outcome: RestoreOutcome | None = None
+    try:
+        restore_outcome = coordinator.consume_restore_request()
+    except Exception as exc:
+        LOGGER.exception("Could not restore the requested backup")
+        if not arguments.smoke_test:
+            QMessageBox.warning(
+                None,
+                _("Não foi possível restaurar a cópia"),
+                _(
+                    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. "
+                    "Consulta organizador.log antes de tentar novamente.\n\n{error}"
+                ).format(error=exc),
+            )
+    if restore_outcome is not None:
+        LOGGER.info(
+            "Restored user backup created at %s from %s",
+            restore_outcome.restored_from,
+            restore_outcome.bundle_path,
         )
         config, config_error = reload_config_after_restore(application, target_data_dir)
 
@@ -466,7 +548,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
     with suppress(Exception):
-        coordinator.prune_healthy_backups()
+        coordinator.prune_automatic_backups()
+    if restore_outcome is not None and not arguments.smoke_test and not arguments.background:
+        outcome = restore_outcome
+        QTimer.singleShot(0, lambda: _announce_restore(outcome))
     if arguments.smoke_test:
         QTimer.singleShot(900, controller.shutdown)
     elif arguments.organize:

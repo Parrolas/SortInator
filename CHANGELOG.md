@@ -2,6 +2,20 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.15.0 - 2026-09-13
+
+### Added
+
+- Backups: create catalog+settings snapshots from Settings, export a portable
+  ".zip", import one back, and restore it with full hash validation and an
+  automatic pre-restore safety snapshot. Restoring replaces the catalog and
+  settings only — your documents are never touched — and the app reopens
+  itself when the staged restore is applied at the next launch.
+- Retention: user backups are never deleted automatically; automatic
+  snapshots keep the newest two per kind for up to 30 days.
+- Hidden CLI flags `--backup-now <folder>` and `--restore-from <path>` that
+  the release E2E now uses to verify backup and restore on every release.
+
 ## 0.14.4 - 2026-09-13
 
 ### Changed

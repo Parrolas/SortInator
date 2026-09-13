@@ -13,14 +13,18 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from organizador.config import AppConfig
+from organizador.db import Database
 from organizador.logging_setup import configure_logging, log_uncaught_exception
 from organizador.main import (
     SingleInstance,
     build_parser,
     load_config_safely,
     reload_config_after_restore,
+    run_ondemand_backup,
     split_update_arguments,
+    stage_requested_restore,
 )
+from organizador.recovery import RecoveryCoordinator
 
 
 def test_configure_logging_is_idempotent_for_same_path(tmp_path: Path) -> None:
@@ -114,6 +118,58 @@ def test_build_parser_accepts_hidden_update_arguments() -> None:
     assert parsed.update_manifest == Path("state/transaction.json")
     assert parsed.update_token == "secret"
     assert build_parser().parse_args([]).update_manifest is None
+
+
+def test_build_parser_accepts_backup_arguments() -> None:
+    parsed = build_parser().parse_args(["--backup-now", "saida", "--restore-from", "copia.zip"])
+
+    assert parsed.backup_now == Path("saida")
+    assert parsed.restore_from == Path("copia.zip")
+    defaults = build_parser().parse_args([])
+    assert defaults.backup_now is None
+    assert defaults.restore_from is None
+
+
+def test_ondemand_backup_and_staged_restore_roundtrip(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    database = Database(data_dir / "organizador.db")
+    database.initialize()
+    with database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO subjects(name, code, color, keywords_json, folder_name, created_at)
+            VALUES ('Cálculo I', 'MAT101', '#087A74', '[]', 'MAT101 - Cálculo I', '2026-01-01')
+            """
+        )
+        connection.commit()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+
+    assert run_ondemand_backup(data_dir, export_dir) == 0
+
+    output = capsys.readouterr().out.strip()
+    assert output.startswith("ZIP:")
+    archive = Path(output.split("ZIP:", 1)[1])
+    assert archive.is_file()
+
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+
+    assert stage_requested_restore(data_dir, archive) == 0
+
+    request_output = capsys.readouterr().out.strip()
+    assert request_output.startswith("PEDIDO:")
+    outcome = RecoveryCoordinator(data_dir).consume_restore_request()
+
+    assert outcome is not None
+    with database.connect() as connection:
+        count = int(connection.execute("SELECT COUNT(*) FROM subjects").fetchone()[0])
+    assert count == 1
 
 
 def test_single_instance_blocks_a_second_copy_of_the_same_data(

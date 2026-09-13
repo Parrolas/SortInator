@@ -287,6 +287,15 @@ EN_STRINGS: dict[str, str] = {
     "Não foi possível recolher o ficheiro": "Could not collect the file",
     "Não foi possível remover": "Could not remove",
     "Não foi possível restaurar": "Could not restore",
+    "Não foi possível restaurar a cópia": "Could not restore the backup",
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+        "The requested backup could not be restored and the current data was kept. "
+        "Check organizador.log before trying again.\n\n{error}"
+    ),
+    "Cópia restaurada": "Backup restored",
+    "Os dados foram repostos a partir da cópia de {when}.": (
+        "Your data was restored from the backup of {when}."
+    ),
     "Não foi possível rever o histórico local: {error}": (
         "Could not review the local history: {error}"
     ),
@@ -409,6 +418,58 @@ EN_STRINGS: dict[str, str] = {
     "Remover registo": "Remove record",
     "Remover registo em falta?": "Remove missing record?",
     "Restaurar": "Restore",
+    "Cópias de segurança": "Backups",
+    "Ainda não há cópias de segurança.": "There are no backups yet.",
+    "Criar cópia agora": "Create backup now",
+    "Criar e exportar .zip…": "Create and export .zip…",
+    "Restaurar…": "Restore…",
+    "As cópias guardam o catálogo e as definições. Os teus documentos não são alterados.": (
+        "Backups store the catalog and the settings. Your documents are not changed."
+    ),
+    "Última cópia: {when} · {size}": "Last backup: {when} · {size}",
+    "Última cópia: {when} · {count} cópias · {size}": (
+        "Last backup: {when} · {count} backups · {size}"
+    ),
+    "A processar a cópia de segurança…": "Processing the backup…",
+    "Espera que as operações de ficheiros terminem antes de criar a cópia.": (
+        "Wait for the file operations to finish before creating the backup."
+    ),
+    "Não foi possível concluir a cópia: {error}": "Could not finish the backup: {error}",
+    "Cópia importada. Escolhe-a na lista para restaurar.": (
+        "Backup imported. Choose it in the list to restore."
+    ),
+    "Cópia exportada: {name}": "Backup exported: {name}",
+    "Cópia criada e exportada: {name}": "Backup created and exported: {name}",
+    "Cópia de segurança criada.": "Backup created.",
+    "Importar cópia de segurança": "Import backup",
+    "Exportar cópia de segurança": "Export backup",
+    "Cópias de segurança (*.zip)": "Backups (*.zip)",
+    "Remover cópia": "Remove backup",
+    "Remover a cópia de {when}? Esta ação não pode ser desfeita.": (
+        "Remove the backup from {when}? This cannot be undone."
+    ),
+    "Restaurar cópia de segurança": "Restore backup",
+    "Os dados atuais serão substituídos pela cópia de {when} e a app vai reiniciar. Os teus documentos não são alterados. Continuar?": (
+        "The current data will be replaced by the backup from {when} and the app will "
+        "restart. Your documents are not changed. Continue?"
+    ),
+    "Espera que as operações de ficheiros terminem antes de restaurar.": (
+        "Wait for the file operations to finish before restoring."
+    ),
+    "Fecha e reabre o Organizador para concluir a reposição.": (
+        "Close and reopen Organizador to finish the restore."
+    ),
+    "Restaurar substitui o catálogo e as definições atuais.": (
+        "Restoring replaces the current catalog and settings."
+    ),
+    "Manual": "Manual",
+    "Antes de atualizar": "Before updating",
+    "Antes de restaurar": "Before restoring",
+    "Do sistema": "System",
+    "{size} · esquema {version}": "{size} · schema {version}",
+    "Importar .zip…": "Import .zip…",
+    "Exportar": "Export",
+    "Remover": "Remove",
     "Retomar vigilância": "Resume watching",
     "Rever {name}": "Review {name}",
     "Revisão manual do histórico": "Manual history review",
@@ -1090,6 +1151,15 @@ ES_STRINGS: dict[str, str] = {
     "Não foi possível recolher o ficheiro": "No se pudo recoger el archivo",
     "Não foi possível remover": "No se pudo eliminar",
     "Não foi possível restaurar": "No se pudo restaurar",
+    "Não foi possível restaurar a cópia": "No se pudo restaurar la copia",
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+        "La copia solicitada no se pudo restaurar y los datos actuales se mantuvieron. "
+        "Consulta organizador.log antes de intentarlo de nuevo.\n\n{error}"
+    ),
+    "Cópia restaurada": "Copia restaurada",
+    "Os dados foram repostos a partir da cópia de {when}.": (
+        "Los datos se restablecieron desde la copia de {when}."
+    ),
     "Não foi possível rever o histórico local: {error}": (
         "No se pudo revisar el historial local: {error}"
     ),
@@ -1213,6 +1283,58 @@ ES_STRINGS: dict[str, str] = {
     "Remover registo": "Eliminar registro",
     "Remover registo em falta?": "¿Eliminar registro faltante?",
     "Restaurar": "Restaurar",
+    "Cópias de segurança": "Copias de seguridad",
+    "Ainda não há cópias de segurança.": "Todavía no hay copias de seguridad.",
+    "Criar cópia agora": "Crear copia ahora",
+    "Criar e exportar .zip…": "Crear y exportar .zip…",
+    "Restaurar…": "Restaurar…",
+    "As cópias guardam o catálogo e as definições. Os teus documentos não são alterados.": (
+        "Las copias guardan el catálogo y las definiciones. Tus documentos no se modifican."
+    ),
+    "Última cópia: {when} · {size}": "Última copia: {when} · {size}",
+    "Última cópia: {when} · {count} cópias · {size}": (
+        "Última copia: {when} · {count} copias · {size}"
+    ),
+    "A processar a cópia de segurança…": "Procesando la copia de seguridad…",
+    "Espera que as operações de ficheiros terminem antes de criar a cópia.": (
+        "Espera a que terminen las operaciones de archivos antes de crear la copia."
+    ),
+    "Não foi possível concluir a cópia: {error}": "No se pudo completar la copia: {error}",
+    "Cópia importada. Escolhe-a na lista para restaurar.": (
+        "Copia importada. Elígela en la lista para restaurar."
+    ),
+    "Cópia exportada: {name}": "Copia exportada: {name}",
+    "Cópia criada e exportada: {name}": "Copia creada y exportada: {name}",
+    "Cópia de segurança criada.": "Copia de seguridad creada.",
+    "Importar cópia de segurança": "Importar copia de seguridad",
+    "Exportar cópia de segurança": "Exportar copia de seguridad",
+    "Cópias de segurança (*.zip)": "Copias de seguridad (*.zip)",
+    "Remover cópia": "Eliminar copia",
+    "Remover a cópia de {when}? Esta ação não pode ser desfeita.": (
+        "¿Eliminar la copia de {when}? Esta acción no se puede deshacer."
+    ),
+    "Restaurar cópia de segurança": "Restaurar copia de seguridad",
+    "Os dados atuais serão substituídos pela cópia de {when} e a app vai reiniciar. Os teus documentos não são alterados. Continuar?": (
+        "Los datos actuales serán sustituidos por la copia de {when} y la app se "
+        "reiniciará. Tus documentos no se modifican. ¿Continuar?"
+    ),
+    "Espera que as operações de ficheiros terminem antes de restaurar.": (
+        "Espera a que terminen las operaciones de archivos antes de restaurar."
+    ),
+    "Fecha e reabre o Organizador para concluir a reposição.": (
+        "Cierra y vuelve a abrir Organizador para completar la restauración."
+    ),
+    "Restaurar substitui o catálogo e as definições atuais.": (
+        "Restaurar sustituye el catálogo y las definiciones actuales."
+    ),
+    "Manual": "Manual",
+    "Antes de atualizar": "Antes de actualizar",
+    "Antes de restaurar": "Antes de restaurar",
+    "Do sistema": "Del sistema",
+    "{size} · esquema {version}": "{size} · esquema {version}",
+    "Importar .zip…": "Importar .zip…",
+    "Exportar": "Exportar",
+    "Remover": "Eliminar",
     "Retomar vigilância": "Reanudar vigilancia",
     "Rever {name}": "Revisar {name}",
     "Revisão manual do histórico": "Revisión manual del historial",
@@ -1931,6 +2053,15 @@ FR_STRINGS: dict[str, str] = {
     "Não foi possível recolher o ficheiro": "Impossible de récupérer le fichier",
     "Não foi possível remover": "Impossible de supprimer",
     "Não foi possível restaurar": "Impossible de restaurer",
+    "Não foi possível restaurar a cópia": "Impossible de restaurer la sauvegarde",
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+        "La sauvegarde demandée n'a pas pu être restaurée et les données actuelles ont été "
+        "conservées. Consulte organizador.log avant de réessayer.\n\n{error}"
+    ),
+    "Cópia restaurada": "Sauvegarde restaurée",
+    "Os dados foram repostos a partir da cópia de {when}.": (
+        "Les données ont été restaurées à partir de la sauvegarde du {when}."
+    ),
     "Não foi possível rever o histórico local: {error}": (
         "Impossible de consulter l'historique local : {error}"
     ),
@@ -2054,6 +2185,61 @@ FR_STRINGS: dict[str, str] = {
     "Remover registo": "Supprimer l'enregistrement",
     "Remover registo em falta?": "Supprimer l'enregistrement manquant ?",
     "Restaurar": "Restaurer",
+    "Cópias de segurança": "Sauvegardes",
+    "Ainda não há cópias de segurança.": "Il n'y a pas encore de sauvegardes.",
+    "Criar cópia agora": "Créer une sauvegarde",
+    "Criar e exportar .zip…": "Créer et exporter .zip…",
+    "Restaurar…": "Restaurer…",
+    "As cópias guardam o catálogo e as definições. Os teus documentos não são alterados.": (
+        "Les sauvegardes contiennent le catalogue et les définitions. "
+        "Tes documents ne sont pas modifiés."
+    ),
+    "Última cópia: {when} · {size}": "Dernière sauvegarde : {when} · {size}",
+    "Última cópia: {when} · {count} cópias · {size}": (
+        "Dernière sauvegarde : {when} · {count} sauvegardes · {size}"
+    ),
+    "A processar a cópia de segurança…": "Traitement de la sauvegarde…",
+    "Espera que as operações de ficheiros terminem antes de criar a cópia.": (
+        "Attends la fin des opérations sur les fichiers avant de créer la sauvegarde."
+    ),
+    "Não foi possível concluir a cópia: {error}": (
+        "Impossible de terminer la sauvegarde : {error}"
+    ),
+    "Cópia importada. Escolhe-a na lista para restaurar.": (
+        "Sauvegarde importée. Choisis-la dans la liste pour restaurer."
+    ),
+    "Cópia exportada: {name}": "Sauvegarde exportée : {name}",
+    "Cópia criada e exportada: {name}": "Sauvegarde créée et exportée : {name}",
+    "Cópia de segurança criada.": "Sauvegarde créée.",
+    "Importar cópia de segurança": "Importer une sauvegarde",
+    "Exportar cópia de segurança": "Exporter une sauvegarde",
+    "Cópias de segurança (*.zip)": "Sauvegardes (*.zip)",
+    "Remover cópia": "Supprimer la sauvegarde",
+    "Remover a cópia de {when}? Esta ação não pode ser desfeita.": (
+        "Supprimer la sauvegarde du {when} ? Cette action est irréversible."
+    ),
+    "Restaurar cópia de segurança": "Restaurer la sauvegarde",
+    "Os dados atuais serão substituídos pela cópia de {when} e a app vai reiniciar. Os teus documentos não são alterados. Continuar?": (
+        "Les données actuelles seront remplacées par la sauvegarde du {when} et "
+        "l'app va redémarrer. Tes documents ne sont pas modifiés. Continuer ?"
+    ),
+    "Espera que as operações de ficheiros terminem antes de restaurar.": (
+        "Attends la fin des opérations sur les fichiers avant de restaurer."
+    ),
+    "Fecha e reabre o Organizador para concluir a reposição.": (
+        "Ferme et rouvre Organizador pour terminer la restauration."
+    ),
+    "Restaurar substitui o catálogo e as definições atuais.": (
+        "La restauration remplace le catalogue et les définitions actuels."
+    ),
+    "Manual": "Manuelle",
+    "Antes de atualizar": "Avant la mise à jour",
+    "Antes de restaurar": "Avant la restauration",
+    "Do sistema": "Système",
+    "{size} · esquema {version}": "{size} · schéma {version}",
+    "Importar .zip…": "Importer .zip…",
+    "Exportar": "Exporter",
+    "Remover": "Supprimer",
     "Retomar vigilância": "Reprendre la surveillance",
     "Rever {name}": "Réviser {name}",
     "Revisão manual do histórico": "Révision manuelle de l'historique",

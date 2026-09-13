@@ -148,6 +148,28 @@ L.launch_swap(Path(os.environ["ORGANIZADOR_E2E_SCRIPT"]))
 print("LAUNCHED")
 '@
 
+$SentinelCode = @'
+import os, sqlite3
+sandbox = os.environ["ORGANIZADOR_E2E_SANDBOX"]
+action = os.environ.get("ORGANIZADOR_E2E_SENTINEL_ACTION", "")
+db = os.path.join(sandbox, "data-first", "organizador.db")
+connection = sqlite3.connect(db)
+try:
+    if action == "setup":
+        connection.execute("DROP TABLE IF EXISTS e2e_sentinel")
+        connection.execute("CREATE TABLE e2e_sentinel(value TEXT)")
+        connection.execute("INSERT INTO e2e_sentinel VALUES ('antes')")
+        connection.commit()
+    elif action == "drop":
+        connection.execute("DROP TABLE e2e_sentinel")
+        connection.commit()
+    elif action == "check":
+        row = connection.execute("SELECT value FROM e2e_sentinel").fetchone()
+        print("SENTINEL:" + (row[0] if row else "missing"))
+finally:
+    connection.close()
+'@
+
 try {
     New-Item -ItemType Directory -Path $Sandbox | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $Evidence) -Force | Out-Null
@@ -311,6 +333,42 @@ try {
 
     $Sentinel = Get-Content -LiteralPath (Join-Path $FakeLocal "Organizador\sentinel.txt") -Raw
     if ($Sentinel.Trim() -ne "do not touch") { Fail "Candidate disturbed the sandboxed profile" }
+
+    # 8. On-demand backup and staged restore through the candidate CLI.
+    Write-Evidence "Backup and restore gate"
+    $FirstDatabase = Join-Path $FirstData "organizador.db"
+    if (-not (Test-Path -LiteralPath $FirstDatabase)) { Fail "Expected profile database is missing" }
+    $BackupExport = Join-Path $Sandbox "backup-export"
+    New-Item -ItemType Directory -Path $BackupExport -Force | Out-Null
+    $CandidateExe = Join-Path $Install "Organizador.exe"
+    Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "setup" } | Out-Null
+
+    $BackupRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--backup-now "' + $BackupExport + '" --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
+    if ($BackupRun.ExitCode -ne 0) { Fail ("Backup failed with exit code " + $BackupRun.ExitCode) }
+    $BackupZip = Get-ChildItem -LiteralPath $BackupExport -Filter "*.zip" | Select-Object -First 1
+    if ($null -eq $BackupZip) { Fail "Backup produced no archive" }
+    Write-Evidence ("Backup archive: " + $BackupZip.Name)
+
+    Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "drop" } | Out-Null
+    $RestoreRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--restore-from "' + $BackupZip.FullName + '" --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
+    if ($RestoreRun.ExitCode -ne 0) { Fail ("Restore staging failed with exit code " + $RestoreRun.ExitCode) }
+    if (-not (Test-Path -LiteralPath (Join-Path $FirstData "restore-request.json"))) {
+        Fail "Restore request was not staged"
+    }
+
+    $RestoreSmoke = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
+    if ($RestoreSmoke.ExitCode -ne 0) { Fail "Restore startup run failed" }
+
+    $SentinelCheck = Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "check" }
+    if (($SentinelCheck -join "`n") -notmatch "SENTINEL:antes") {
+        Fail "Restore did not recover the sentinel data"
+    }
+    $PreRestore = @(Get-ChildItem -LiteralPath (Join-Path $FirstData "backups") -Directory -Filter "pre_restore-*" -ErrorAction SilentlyContinue)
+    if ($PreRestore.Count -lt 1) { Fail "Restore left no pre-restore snapshot" }
+    if (Test-Path -LiteralPath (Join-Path $FirstData "restore-request.json")) {
+        Fail "Restore request was not consumed"
+    }
+    Write-Evidence "Backup and restore verified"
 
     Write-Evidence "E2E PASS: $LegacyTag -> $CandidateVersion"
 }

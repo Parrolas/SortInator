@@ -36,8 +36,9 @@ from organizador.db import Database
 from organizador.filer import FilingService, render_final_name
 from organizador.i18n import _
 from organizador.models import FILE_KINDS, FiledDocument, InboxItem, StudyTask, Subject
+from organizador.recovery import PRE_RESTORE_MARKER, USER_MARKER, BundleInfo
 from organizador.ui import theme as ui_theme
-from organizador.ui.widgets import button, format_size, label
+from organizador.ui.widgets import button, clear_layout, format_size, label
 
 
 class SubjectDialog(QDialog):
@@ -556,6 +557,104 @@ class BulkFilingDialog(QDialog):
         if subject_id is None or kind is None:  # pragma: no cover - combo is always populated
             raise RuntimeError("A seleção de disciplina e tipo é obrigatória.")
         return int(subject_id), str(kind), self.task_check.isChecked(), due
+
+
+class BackupListDialog(QDialog):
+    """List existing snapshots with restore, export and delete actions."""
+
+    import_requested = Signal()
+    restore_requested = Signal(object)
+    export_requested = Signal(object)
+    delete_requested = Signal(object)
+
+    def __init__(self, bundles: Sequence[BundleInfo], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.bundles = tuple(bundles)
+        self.setWindowTitle(_("Cópias de segurança"))
+        self.setModal(True)
+        self.setMinimumSize(640, 480)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(28, 24, 28, 22)
+        root.setSpacing(12)
+        root.addWidget(label(_("Cópias de segurança"), "PageTitle"))
+        root.addWidget(
+            label(_("Restaurar substitui o catálogo e as definições atuais."), "PageSubtitle")
+        )
+
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        content = QWidget()
+        self.list_layout = QVBoxLayout(content)
+        self.list_layout.setContentsMargins(0, 0, 4, 0)
+        self.list_layout.setSpacing(8)
+        area.setWidget(content)
+        root.addWidget(area, 1)
+
+        actions = QHBoxLayout()
+        import_button = button(_("Importar .zip…"))
+        import_button.clicked.connect(lambda _checked=False: self.import_requested.emit())
+        close = button(_("Fechar"))
+        close.clicked.connect(self.reject)
+        actions.addWidget(import_button)
+        actions.addStretch(1)
+        actions.addWidget(close)
+        root.addLayout(actions)
+        self.set_bundles(self.bundles)
+
+    def set_bundles(self, bundles: Sequence[BundleInfo]) -> None:
+        """Rebuild the list after an import or delete."""
+
+        self.bundles = tuple(bundles)
+        clear_layout(self.list_layout)
+        if not self.bundles:
+            self.list_layout.addWidget(label(_("Ainda não há cópias de segurança."), "Muted"))
+        for bundle in self.bundles:
+            self.list_layout.addWidget(self._row(bundle))
+        self.list_layout.addStretch(1)
+
+    def _row(self, bundle: BundleInfo) -> QWidget:
+        row = QFrame()
+        row.setObjectName("ListRow")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(15, 11, 12, 11)
+        layout.setSpacing(12)
+        copy = QVBoxLayout()
+        copy.setSpacing(2)
+        when = bundle.created_at.astimezone().strftime("%d/%m/%Y %H:%M")
+        copy.addWidget(label(f"{self._kind_label(bundle.kind)} · {when}", "RowTitle"))
+        copy.addWidget(
+            label(
+                _("{size} · esquema {version}").format(
+                    size=format_size(bundle.size_bytes),
+                    version=bundle.database_user_version,
+                ),
+                "Muted",
+            )
+        )
+        layout.addLayout(copy, 1)
+        restore = button(_("Restaurar"), variant="primary")
+        restore.setEnabled(bundle.kind in {USER_MARKER, PRE_RESTORE_MARKER, "migration"})
+        restore.clicked.connect(lambda _checked=False: self.restore_requested.emit(bundle))
+        layout.addWidget(restore)
+        export = button(_("Exportar"), variant="quiet")
+        export.clicked.connect(lambda _checked=False: self.export_requested.emit(bundle))
+        layout.addWidget(export)
+        if bundle.kind == USER_MARKER:
+            delete = button(_("Remover"), variant="danger")
+            delete.clicked.connect(lambda _checked=False: self.delete_requested.emit(bundle))
+            layout.addWidget(delete)
+        return row
+
+    @staticmethod
+    def _kind_label(kind: str) -> str:
+        if kind == USER_MARKER:
+            return _("Manual")
+        if kind == "migration":
+            return _("Antes de atualizar")
+        if kind == PRE_RESTORE_MARKER:
+            return _("Antes de restaurar")
+        return _("Do sistema")
 
 
 class SubjectFilesDialog(QDialog):

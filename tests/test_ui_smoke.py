@@ -6,7 +6,7 @@ import dataclasses
 import threading
 import time
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -35,7 +35,14 @@ from organizador.models import ExistingDownload, FindingReason, Subject
 from organizador.paths import IncompleteMoveError
 from organizador.reconcile import findings, visible_findings
 from organizador.reconcile import scan as scan_reconciliation
+from organizador.recovery import (
+    PRE_RESTORE_MARKER,
+    RESTORE_REQUEST_NAME,
+    USER_MARKER,
+    BundleInfo,
+)
 from organizador.ui.dialogs import (
+    BackupListDialog,
     OnboardingDialog,
     SubjectDialog,
     SubjectFilesDialog,
@@ -160,6 +167,144 @@ def test_settings_page_gates_the_popup_timeout(
     finally:
         page.deleteLater()
         qt_app.processEvents()
+
+
+def _bundle_info(
+    path: str, kind: str, when: datetime | None = None, size: int = 2048
+) -> BundleInfo:
+    return BundleInfo(
+        path=Path(path),
+        created_at=when or datetime(2026, 9, 13, 12, tzinfo=UTC),
+        database_user_version=6,
+        settings_present=True,
+        kind=kind,
+        size_bytes=size,
+    )
+
+
+def test_settings_backup_panel_summarizes_snapshots(
+    qt_app: QApplication,
+    app_config: AppConfig,
+) -> None:
+    del qt_app
+    page = SettingsPage(app_config)
+    try:
+        page.set_backup_inventory(())
+        assert "Ainda não há cópias" in page.backup_status.text()
+
+        page.set_backup_inventory((_bundle_info("C:/b/user-a", USER_MARKER),))
+        assert "Última cópia" in page.backup_status.text()
+
+        page.set_backup_inventory(
+            (
+                _bundle_info("C:/b/user-a", USER_MARKER),
+                _bundle_info("C:/b/user-b", USER_MARKER),
+            )
+        )
+        assert "2 cópias" in page.backup_status.text()
+
+        page.set_backup_busy(True)
+        assert not page.backup_create_button.isEnabled()
+        assert not page.backup_export_button.isEnabled()
+        assert not page.backup_manage_button.isEnabled()
+        assert "A processar" in page.backup_status.text()
+
+        page.set_backup_busy(False)
+        assert page.backup_create_button.isEnabled()
+
+        requested: list[str] = []
+        page.backup_created_requested.connect(lambda: requested.append("create"))
+        page.backup_export_requested.connect(lambda: requested.append("export"))
+        page.backup_manager_requested.connect(lambda: requested.append("manage"))
+        page.backup_open_folder_requested.connect(lambda: requested.append("folder"))
+        page.backup_create_button.click()
+        page.backup_export_button.click()
+        page.backup_manage_button.click()
+        page.backup_folder_button.click()
+
+        assert requested == ["create", "export", "manage", "folder"]
+    finally:
+        page.deleteLater()
+
+
+def test_backup_list_dialog_actions_respect_bundle_kinds(qt_app: QApplication) -> None:
+    del qt_app
+    user = _bundle_info("C:/b/user-a", USER_MARKER, datetime(2026, 9, 13, 12, tzinfo=UTC))
+    migration = _bundle_info("C:/b/migration-a", "migration", datetime(2026, 9, 12, 10, tzinfo=UTC))
+    pre_restore = _bundle_info("C:/b/pre-restore-a", PRE_RESTORE_MARKER)
+    dialog = BackupListDialog((user, migration, pre_restore))
+    try:
+        buttons = dialog.findChildren(QPushButton)
+        restore_buttons = [control for control in buttons if control.text() == "Restaurar"]
+        export_buttons = [control for control in buttons if control.text() == "Exportar"]
+        delete_buttons = [control for control in buttons if control.text() == "Remover"]
+        assert len(restore_buttons) == 3
+        assert len(export_buttons) == 3
+        assert len(delete_buttons) == 1
+
+        restored: list[BundleInfo] = []
+        dialog.restore_requested.connect(restored.append)
+        for control in restore_buttons:
+            control.click()
+
+        assert restored == [user, migration, pre_restore]
+
+        removed: list[BundleInfo] = []
+        dialog.delete_requested.connect(removed.append)
+        delete_buttons[0].click()
+
+        assert removed == [user]
+
+        dialog.set_bundles(())
+        assert any(
+            control.text() == "Importar .zip…" for control in dialog.findChildren(QPushButton)
+        )
+    finally:
+        dialog.deleteLater()
+
+
+def test_controller_creates_backups_and_stages_restores(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    page = controller.main_window.settings_page
+    try:
+        controller._pending_transfers = 1
+        controller.create_user_backup()
+        assert "Espera" in page.backup_status.text()
+        controller._pending_transfers = 0
+
+        controller.create_user_backup()
+        _pump_until(qt_app, lambda: page.backup_create_button.isEnabled())
+
+        bundles = controller._list_bundles()
+        user_bundle = next(info for info in bundles if info.kind == USER_MARKER)
+        assert "criada" in page.backup_status.text()
+
+        monkeypatch.setattr(
+            QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+        )
+        relaunches: list[bool] = []
+        monkeypatch.setattr(controller, "_relaunch_for_restore", lambda: relaunches.append(True))
+
+        controller._request_restore(user_bundle)
+
+        assert relaunches == [True]
+        assert (app_config.data_dir / RESTORE_REQUEST_NAME).is_file()
+
+        dialog = BackupListDialog((user_bundle,), controller.main_window)
+        try:
+            controller._delete_backup(user_bundle, dialog)
+        finally:
+            dialog.deleteLater()
+
+        assert not user_bundle.path.exists()
+        assert controller._list_bundles() == ()
+    finally:
+        (app_config.data_dir / RESTORE_REQUEST_NAME).unlink(missing_ok=True)
+        _close_controller(qt_app, controller)
 
 
 def test_settings_quiet_checkbox_round_trips_through_payload(
