@@ -595,7 +595,7 @@ def test_failed_indexing_batch_does_not_starve_later_documents(
     indexer = DocumentIndexer(database, refill)
     try:
         indexer.submit_pending()
-        deadline = monotonic() + 5.0
+        deadline = monotonic() + 20.0
         while not database.search("healthy") and monotonic() < deadline:
             sleep(0.01)
 

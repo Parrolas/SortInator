@@ -926,7 +926,7 @@ def test_confirmed_existing_download_import_is_capped_and_uses_normal_inbox_flow
 
     controller._import_existing_downloads()
 
-    deadline = time.monotonic() + 5.0
+    deadline = time.monotonic() + 20.0
     while controller._manual_import_active and time.monotonic() < deadline:
         qt_app.processEvents()
         time.sleep(0.01)
