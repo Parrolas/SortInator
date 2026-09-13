@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,6 +29,47 @@ def button(text: str, *, variant: str = "default") -> QPushButton:
     result.setProperty("variant", variant)
     result.setCursor(Qt.CursorShape.PointingHandCursor)
     return result
+
+
+class ElidedChipButton(QPushButton):
+    """Checkable chip that keeps the start of a long label readable.
+
+    The full label stays in the accessible name and can drive tooltips; the
+    painted text is elided on the right so truncation stays obvious. The
+    horizontal size policy is ignored so re-eliding never feeds back into the
+    grid layout (which would otherwise oscillate between hints).
+    """
+
+    CHROME_WIDTH = 34
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self._full_text = text
+        self.setAccessibleName(text)
+        self._apply_elide()
+
+    def full_text(self) -> str:
+        """Return the untruncated label."""
+
+        return self._full_text
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        self.ensurePolished()
+        available = max(24, self.width() - self.CHROME_WIDTH)
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, available
+        )
+        if elided != super().text():
+            super().setText(elided)
 
 
 def label(text: str, object_name: str) -> QLabel:

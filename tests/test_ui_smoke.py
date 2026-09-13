@@ -538,6 +538,51 @@ def test_prompt_flow_detects_an_existing_copy(
         _close_controller(qt_app, controller)
 
 
+def test_filing_prompt_elides_long_subject_names(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+) -> None:
+    long_name = "Armazenamento para Bibliotecas Digitais"
+    long_subject = database.add_subject(long_name, "ABD", "#087A74", (), "ABD - Armazenamento")
+    inbox_path = app_config.inbox_dir / "aula.pdf"
+    inbox_path.write_bytes(b"conteudo para o teste de elisao")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+    prompt = FilingPrompt(timeout_seconds=30)
+    try:
+        subjects = [subject, long_subject]
+        guess = guess_filing(item.original_name, subjects)
+        prompt.show_item(item, subjects, guess)
+        qt_app.processEvents()
+        prompt.adjustSize()
+        qt_app.processEvents()
+
+        long_button = prompt.subject_group.button(long_subject.id)
+        short_button = prompt.subject_group.button(subject.id)
+        assert long_button is not None and short_button is not None
+        assert long_button.full_text() == f"2  {long_name}"
+        visible = long_button.text().rstrip("…")
+        assert long_button.text().endswith("…")
+        assert len(long_button.text()) < len(f"2  {long_name}")
+        assert visible.startswith("2  Armazena")
+        assert f"2  {long_name}".startswith(visible)
+        assert long_button.accessibleName() == f"2  {long_name}"
+        assert long_name in long_button.toolTip()
+        assert short_button.text() == f"1  {subject.name}"
+
+        prompt._choose_subject(long_subject.id, long_button)
+        assert prompt.selected_subject_id == long_subject.id
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
 def test_subject_colour_button_keeps_readable_text(qt_app: QApplication) -> None:
     dialog = SubjectDialog()
 

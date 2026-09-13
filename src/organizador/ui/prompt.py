@@ -24,7 +24,7 @@ from organizador.classifier import extract_due_date
 from organizador.filer import render_final_name
 from organizador.i18n import _
 from organizador.models import FILE_KINDS, FiledDocument, FilingGuess, InboxItem, Subject
-from organizador.ui.widgets import button, clear_layout, format_size, label
+from organizador.ui.widgets import ElidedChipButton, button, clear_layout, format_size, label
 
 
 class FilingPrompt(QWidget):
@@ -220,16 +220,18 @@ class FilingPrompt(QWidget):
             shortcut.deleteLater()
         self._shortcuts.clear()
         for index, subject in enumerate(subjects, start=1):
-            subject_button = QPushButton(f"{index}  {subject.name}" if index <= 9 else subject.name)
+            display_name = f"{index}  {subject.name}" if index <= 9 else subject.name
+            subject_button = ElidedChipButton(display_name)
             subject_button.setCheckable(True)
             subject_button.setProperty("chip", "true")
             subject_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            tooltip = (
-                f"{subject.code} · {', '.join(subject.keywords)}"
-                if subject.code
-                else ", ".join(subject.keywords)
-            )
-            subject_button.setToolTip(tooltip)
+            tooltip_parts = [display_name]
+            if subject.code:
+                tooltip_parts.append(subject.code)
+            keywords = ", ".join(subject.keywords)
+            if keywords:
+                tooltip_parts.append(keywords)
+            subject_button.setToolTip("\n".join(tooltip_parts))
             self.subject_group.addButton(subject_button, subject.id)
             self.subject_grid.addWidget(subject_button, (index - 1) // 3, (index - 1) % 3)
             if subject.id == guess.subject_id:

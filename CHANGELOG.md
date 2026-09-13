@@ -2,6 +2,14 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.14.2 - 2026-09-12
+
+### Fixed
+
+- The filing prompt keeps the start of long subject names visible, ending
+  them with "…" instead of clipping the middle. The full name stays available
+  in the tooltip and to screen readers.
+
 ## 0.14.1 - 2026-09-12
 
 ### Added
