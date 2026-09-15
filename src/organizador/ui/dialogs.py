@@ -703,24 +703,17 @@ class SubjectFilesDialog(QDialog):
         if kind_parts:
             root.addWidget(label(" · ".join(kind_parts), "Muted"))
 
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        content = QWidget()
-        list_layout = QVBoxLayout(content)
-        list_layout.setContentsMargins(0, 0, 4, 0)
-        list_layout.setSpacing(8)
-        if not self.documents:
-            empty = label(
-                _("Ainda não há ficheiros organizados nesta disciplina."),
-                "Muted",
-            )
-            empty.setWordWrap(True)
-            list_layout.addWidget(empty)
-        for document in self.documents:
-            list_layout.addWidget(self._row(document))
-        list_layout.addStretch(1)
-        area.setWidget(content)
-        root.addWidget(area, 1)
+        self.area = QScrollArea()
+        self.area.setWidgetResizable(True)
+        self.content = QWidget()
+        self.list_layout = QVBoxLayout(self.content)
+        self.list_layout.setContentsMargins(0, 0, 4, 0)
+        self.list_layout.setSpacing(8)
+        self.area.setWidget(self.content)
+        root.addWidget(self.area, 1)
+        self.pending_labels: dict[int, QLabel] = {}
+        self.reindex_buttons: dict[int, QPushButton] = {}
+        self.set_documents(documents)
 
         actions = QHBoxLayout()
         actions.addStretch(1)
@@ -733,6 +726,42 @@ class SubjectFilesDialog(QDialog):
         actions.addWidget(folder_button)
         actions.addWidget(close)
         root.addLayout(actions)
+
+    def set_documents(self, documents: Sequence[FiledDocument]) -> None:
+        """Rebuild the rows from fresh data, preserving the scroll position."""
+
+        self.documents = tuple(documents)
+        self.pending_labels.clear()
+        self.reindex_buttons.clear()
+        position = self.area.verticalScrollBar().value()
+        clear_layout(self.list_layout)
+        if not self.documents:
+            empty = label(
+                _("Ainda não há ficheiros organizados nesta disciplina."),
+                "Muted",
+            )
+            empty.setWordWrap(True)
+            self.list_layout.addWidget(empty)
+        for document in self.documents:
+            self.list_layout.addWidget(self._row(document))
+        self.list_layout.addStretch(1)
+        self.area.verticalScrollBar().setValue(position)
+
+    def mark_reindexing(self, file_id: int) -> None:
+        """Show that one document is being extracted again."""
+
+        button = self.reindex_buttons.get(file_id)
+        if button is not None:
+            button.setEnabled(False)
+        self.set_reindex_notice(file_id, _("A reindexar…"))
+
+    def set_reindex_notice(self, file_id: int, message: str) -> None:
+        """Attach one transient status message to a document row."""
+
+        note = self.pending_labels.get(file_id)
+        if note is not None:
+            note.setText(message)
+            note.show()
 
     def _row(self, document: FiledDocument) -> QFrame:
         row = QFrame()
@@ -762,11 +791,17 @@ class SubjectFilesDialog(QDialog):
             )
             failed_note.setWordWrap(True)
             copy.addWidget(failed_note)
+        pending_note = label("", "Muted")
+        pending_note.setWordWrap(True)
+        pending_note.hide()
+        copy.addWidget(pending_note)
+        self.pending_labels[document.id] = pending_note
         row_layout.addLayout(copy, 1)
         reindex_button = button(_("Reindexar"), variant="quiet")
         reindex_button.clicked.connect(
             lambda checked=False, file_id=document.id: self.reindex_requested.emit(file_id)
         )
+        self.reindex_buttons[document.id] = reindex_button
         row_layout.addWidget(reindex_button)
         open_button = button(_("Abrir"), variant="quiet")
         open_button.clicked.connect(

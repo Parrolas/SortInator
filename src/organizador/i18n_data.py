@@ -848,6 +848,10 @@ EN_STRINGS: dict[str, str] = {
         "Indexing failed — the file is still searchable by name."
     ),
     "Reindexar": "Reindex",
+    "A reindexar…": "Reindexing…",
+    "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
+        "The indexing queue is busy; the document will be indexed as soon as possible."
+    ),
     "Tenta organizar o ficheiro quando a atualização terminar.": (
         "Try organizing the file once the update finishes."
     ),
@@ -1745,6 +1749,10 @@ ES_STRINGS: dict[str, str] = {
         "La indexación falló — el archivo sigue siendo buscable por su nombre."
     ),
     "Reindexar": "Reindexar",
+    "A reindexar…": "Reindexando…",
+    "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
+        "La cola de indexación está ocupada; el documento se indexará lo antes posible."
+    ),
     "Tenta organizar o ficheiro quando a atualização terminar.": (
         "Intenta organizar el archivo cuando termine la actualización."
     ),
@@ -2659,6 +2667,10 @@ FR_STRINGS: dict[str, str] = {
         "L'indexation a échoué — le fichier reste trouvable par son nom."
     ),
     "Reindexar": "Réindexer",
+    "A reindexar…": "Réindexation…",
+    "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
+        "La file d'indexation est occupée ; le document sera indexé dès que possible."
+    ),
     "Tenta organizar o ficheiro quando a atualização terminar.": (
         "Essaie d'organiser le fichier une fois la mise à jour terminée."
     ),

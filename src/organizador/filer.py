@@ -28,7 +28,6 @@ from organizador.paths import (
     IncompleteMoveError,
     is_direct_child,
     move_without_overwrite,
-    normalise_path_key,
     resolve_contained,
     sanitise_component,
     sanitise_filename,
@@ -257,7 +256,9 @@ class FilingService:
 
         filename = self._name_with_original_extension(requested_name, item.original_name)
         folder = self.config.university_root / subject.folder_name / kind
-        version_event = self._replace_previous_version(folder, filename, replace_document_id)
+        version_event = self._replace_previous_version(
+            folder, replace_document_id, subject_id, kind
+        )
         destination, collided = self._plan_contained_destination(
             folder, filename, self.config.university_root
         )
@@ -333,12 +334,19 @@ class FilingService:
         return f"{path.stem} ({_('versão anterior')}){path.suffix}"
 
     def _replace_previous_version(
-        self, folder: Path, filename: str, replace_document_id: int | None
+        self,
+        folder: Path,
+        replace_document_id: int | None,
+        subject_id: int,
+        kind: str,
     ) -> HistoryEvent | None:
-        """Rename the document being replaced when the request matches it exactly.
+        """Rename the document being replaced when the request matches it.
 
-        A failed rename is not fatal: the filing then proceeds as an ordinary
-        collision-safe copy, and any retained rename stays journaled.
+        Replacement is decided by the document identity (subject and kind),
+        not by the incoming filename, so a duplicate filed under a different
+        name still supersedes the old version. A failed rename is not fatal:
+        the filing then proceeds as an ordinary collision-safe copy, and any
+        retained rename stays journaled.
         """
 
         if replace_document_id is None:
@@ -346,13 +354,12 @@ class FilingService:
         existing = self.database.get_file(replace_document_id)
         if existing is None or existing.catalog_state != "active":
             return None
-        expected = folder / sanitise_filename(filename)
-        if normalise_path_key(existing.current_path) != normalise_path_key(expected):
+        if existing.subject_id != subject_id or existing.kind != kind:
             return None
         try:
             versioned, _ = self._plan_contained_destination(
                 folder,
-                self._previous_version_name(filename),
+                self._previous_version_name(existing.current_path.name),
                 self.config.university_root,
             )
         except FilingError:
@@ -472,7 +479,7 @@ class FilingService:
         version_reverted = False
         if version_event is not None:
             try:
-                move_without_overwrite(version_event.destination_path, event.destination_path)
+                move_without_overwrite(version_event.destination_path, version_event.source_path)
                 version_reverted = True
             except OSError:
                 LOGGER.exception("Failed to restore the previous version name")
@@ -485,7 +492,9 @@ class FilingService:
         except Exception as exc:
             if version_reverted and version_event is not None:
                 with suppress(OSError):
-                    move_without_overwrite(event.destination_path, version_event.destination_path)
+                    move_without_overwrite(
+                        version_event.source_path, version_event.destination_path
+                    )
             rollback = unique_path(event.destination_path.parent, event.destination_path.name)
             try:
                 move_without_overwrite(restored_path, rollback)

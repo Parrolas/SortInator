@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import organizador.recovery as recovery_module
-from organizador.db import Database
+from organizador.db import Database, DatabaseHealth, DatabaseHealthError
 from organizador.recovery import (
     DATABASE_BACKUP_NAME,
     MANIFEST_NAME,
@@ -214,6 +214,69 @@ def test_zip_import_rejects_a_tampered_database(tmp_path: Path) -> None:
 
     with pytest.raises(RecoveryError):
         coordinator.import_bundle_zip(archive)
+
+
+def test_failed_restore_keeps_the_current_database_and_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    original_replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self.name.startswith(".organizador.db.restore-"):
+            raise OSError("disco cheio")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+
+    with pytest.raises(OSError):
+        coordinator.restore_bundle(bundle.path)
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert (data_dir / "settings.json").read_bytes() == current_settings
+    assert _subject_count(data_dir / "organizador.db") == 0
+    assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
+
+
+def test_restore_rolls_back_when_verification_fails_after_the_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    original_validate = Database.validate_health
+
+    def failing_validate(self: Database) -> DatabaseHealth:
+        if self.path == data_dir / "organizador.db":
+            raise DatabaseHealthError("quick_check falhou")
+        return original_validate(self)
+
+    monkeypatch.setattr(Database, "validate_health", failing_validate)
+
+    with pytest.raises(DatabaseHealthError):
+        coordinator.restore_bundle(bundle.path)
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert (data_dir / "settings.json").read_bytes() == current_settings
+    assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
 
 
 def test_restore_request_roundtrip_creates_pre_restore_snapshot(tmp_path: Path) -> None:

@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS inbox (
     suggested_subject_id INTEGER REFERENCES subjects(id) ON DELETE SET NULL,
     suggested_kind TEXT NOT NULL DEFAULT 'Outros',
     last_error TEXT NOT NULL DEFAULT '',
-    content_sha256 TEXT NOT NULL DEFAULT ''
+    content_sha256 TEXT NOT NULL DEFAULT '',
+    hash_fingerprint TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_active_path
@@ -149,7 +150,8 @@ CREATE TABLE IF NOT EXISTS files (
         CHECK (catalog_state IN ('active', 'dropped')),
     index_state TEXT NOT NULL DEFAULT '',
     index_error TEXT NOT NULL DEFAULT '',
-    content_sha256 TEXT NOT NULL DEFAULT ''
+    content_sha256 TEXT NOT NULL DEFAULT '',
+    hash_fingerprint TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -233,8 +235,9 @@ _ADDITIVE_COLUMNS = {
         "index_error",
         "mtime_ns",
         "content_sha256",
+        "hash_fingerprint",
     ),
-    "inbox": ("content_sha256",),
+    "inbox": ("content_sha256", "hash_fingerprint"),
     "tasks": ("reminder_lead_days", "last_notified_on"),
 }
 
@@ -523,17 +526,24 @@ class Database:
     def _prepare_content_hashes(connection: sqlite3.Connection) -> None:
         """Ensure the additive duplicate-detection columns exist."""
 
-        tables = {
-            "inbox": "ALTER TABLE inbox ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''",
-            "files": "ALTER TABLE files ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''",
+        additions = {
+            "inbox": (
+                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
+                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ),
+            "files": (
+                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
+                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ),
         }
-        for table, statement in tables.items():
+        for table, columns_to_add in additions.items():
             columns = {
                 str(row["name"])
                 for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
             }
-            if "content_sha256" not in columns:
-                connection.execute(statement)
+            for name, declaration in columns_to_add:
+                if name not in columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
     @staticmethod
     def _prepare_search_reindex(connection: sqlite3.Connection) -> None:
@@ -827,23 +837,23 @@ class Database:
             connection.commit()
         return item
 
-    def set_inbox_hash(self, inbox_id: int, content_sha256: str) -> None:
-        """Cache a content fingerprint computed after ingestion."""
+    def set_inbox_hash(self, inbox_id: int, content_sha256: str, fingerprint: str) -> None:
+        """Cache a content fingerprint and the stat fingerprint it was read from."""
 
         with self.connect() as connection:
             connection.execute(
-                "UPDATE inbox SET content_sha256 = ? WHERE id = ? AND content_sha256 = ''",
-                (content_sha256, inbox_id),
+                "UPDATE inbox SET content_sha256 = ?, hash_fingerprint = ? WHERE id = ?",
+                (content_sha256, fingerprint, inbox_id),
             )
             connection.commit()
 
-    def set_file_hash(self, file_id: int, content_sha256: str) -> None:
-        """Cache a content fingerprint computed after filing."""
+    def set_file_hash(self, file_id: int, content_sha256: str, fingerprint: str) -> None:
+        """Cache a content fingerprint and the stat fingerprint it was read from."""
 
         with self.connect() as connection:
             connection.execute(
-                "UPDATE files SET content_sha256 = ? WHERE id = ? AND content_sha256 = ''",
-                (content_sha256, file_id),
+                "UPDATE files SET content_sha256 = ?, hash_fingerprint = ? WHERE id = ?",
+                (content_sha256, fingerprint, file_id),
             )
             connection.commit()
 
@@ -1913,7 +1923,7 @@ class Database:
             document = connection.execute(
                 """
                 SELECT current_path FROM files
-                WHERE id = ? AND origin = 'filed' AND catalog_state = 'active'
+                WHERE id = ? AND catalog_state = 'active'
                 """,
                 (file_id,),
             ).fetchone()
@@ -2112,7 +2122,7 @@ class Database:
                     WHERE id = ? AND current_path = ? AND catalog_state = 'active'
                     """,
                     (
-                        str(event.destination_path),
+                        str(version_event.source_path),
                         version_event.file_id,
                         str(version_event.destination_path),
                     ),
@@ -2712,6 +2722,7 @@ class Database:
             suggested_kind=str(row["suggested_kind"]),
             last_error=str(row["last_error"]),
             content_sha256=str(row["content_sha256"]),
+            hash_fingerprint=str(row["hash_fingerprint"]),
         )
 
     @staticmethod
@@ -2734,6 +2745,7 @@ class Database:
             index_state=str(row["index_state"]),
             index_error=str(row["index_error"]),
             content_sha256=str(row["content_sha256"]),
+            hash_fingerprint=str(row["hash_fingerprint"]),
         )
 
     @staticmethod

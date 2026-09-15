@@ -1050,13 +1050,17 @@ def test_redirect_filing_destination_requires_the_pending_marker(
 def test_legacy_database_gains_duplicate_columns(database: Database) -> None:
     with database.connect() as connection:
         connection.execute("ALTER TABLE inbox DROP COLUMN content_sha256")
+        connection.execute("ALTER TABLE inbox DROP COLUMN hash_fingerprint")
         connection.execute("ALTER TABLE files DROP COLUMN content_sha256")
+        connection.execute("ALTER TABLE files DROP COLUMN hash_fingerprint")
         connection.execute("ALTER TABLE events DROP COLUMN related_event_id")
         connection.commit()
 
     missing = database.inspect_schema().missing_additions
     assert "inbox.content_sha256" in missing
+    assert "inbox.hash_fingerprint" in missing
     assert "files.content_sha256" in missing
+    assert "files.hash_fingerprint" in missing
     assert "events.related_event_id" in missing
 
     database.initialize()

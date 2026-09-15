@@ -368,6 +368,56 @@ def test_requeue_schedules_bounded_ingest_retries(
         watcher.stop()
 
 
+def test_delivery_does_not_reset_the_bounded_retry_budget(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = app_config.downloads_dir / "delivered-then-failed.pdf"
+    candidate.write_bytes(b"delivered but never moved")
+    delivered = Event()
+
+    monkeypatch.setattr("organizador.watcher.wait_until_stable", lambda *_args, **_kwargs: True)
+    watcher = DownloadWatcher(app_config, lambda _path: delivered.set(), retry_delays=(0.0, 0.0))
+    watcher.start(observe=False)
+
+    def wait_worker_idle(value: str) -> None:
+        deadline = monotonic() + 1.0
+        while value in watcher._pending and monotonic() < deadline:
+            sleep(0.01)
+
+    try:
+        watcher.enqueue(candidate)
+        assert delivered.wait(1.0)
+        delivered.clear()
+        key = next(iter(watcher._known))
+        wait_worker_idle(key)
+
+        watcher.requeue(candidate)
+        assert watcher._retry_attempts[key] == 1
+        watcher._retry_after[key] = 0.0
+        watcher._sweep_once()
+        assert delivered.wait(1.0)
+        delivered.clear()
+        wait_worker_idle(key)
+
+        watcher.requeue(candidate)
+        assert watcher._retry_attempts[key] == 2
+        watcher._retry_after[key] = 0.0
+        watcher._sweep_once()
+        assert delivered.wait(1.0)
+        delivered.clear()
+        wait_worker_idle(key)
+
+        watcher.requeue(candidate)
+        assert key not in watcher._retry_attempts
+        assert key in watcher._retry_exhausted
+
+        watcher.enqueue(candidate)
+        assert not delivered.wait(0.2)
+        assert watcher._queue.empty()
+    finally:
+        watcher.stop()
+
+
 def test_expired_requeue_reaches_pending_through_the_sweep(
     app_config: AppConfig,
 ) -> None:
@@ -602,6 +652,26 @@ def test_failed_indexing_batch_does_not_starve_later_documents(
         results = database.search("healthy")
         assert results
         assert results[0].file_id == healthy_id
+    finally:
+        indexer.shutdown()
+
+
+def test_reindex_reports_when_the_queue_is_full(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    path = tmp_path / "fila.txt"
+    path.write_text("conteudo para reindexar", encoding="utf-8")
+    file_id = _file_record(database, subject, path)
+    document = database.get_file(file_id)
+    assert document is not None
+    indexer = DocumentIndexer(database)
+    try:
+        indexer._active = {(index, "") for index in range(MAX_PENDING_INDEX_JOBS)}
+
+        assert indexer.reindex(document) is False
+
+        indexer._active.clear()
+        assert indexer.reindex(document) is True
     finally:
         indexer.shutdown()
 

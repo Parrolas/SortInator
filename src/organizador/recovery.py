@@ -690,7 +690,7 @@ class RecoveryCoordinator:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         database_stage = self.data_dir / (f".{self.database_path.name}.restore-{uuid4().hex}.tmp")
         settings_stage = self.data_dir / (f".{self.settings_path.name}.restore-{uuid4().hex}.tmp")
-        moved_sidecars: list[tuple[Path, Path]] = []
+        saved_originals: list[tuple[Path, Path]] = []
         try:
             _copy_durable(validated.database_path, database_stage)
             if _sha256_file(database_stage) != validated.database_sha256:
@@ -700,36 +700,46 @@ class RecoveryCoordinator:
                 _copy_durable(validated.settings_path, settings_stage)
                 if _sha256_file(settings_stage) != validated.settings_sha256:
                     raise RecoveryError("The staged settings hash does not match its manifest.")
-                settings_stage.replace(self.settings_path)
-            else:
-                self.settings_path.unlink(missing_ok=True)
-
             try:
-                for sidecar in self._database_sidecars():
-                    if not sidecar.exists() and not sidecar.is_symlink():
+                originals = (
+                    self.settings_path,
+                    *self._database_sidecars(),
+                    self.database_path,
+                )
+                for original in originals:
+                    if not original.exists() and not original.is_symlink():
                         continue
-                    moved = self.data_dir / f".{sidecar.name}.replaced-{uuid4().hex}.tmp"
-                    sidecar.replace(moved)
-                    moved_sidecars.append((sidecar, moved))
+                    saved = self.data_dir / f".{original.name}.replaced-{uuid4().hex}.tmp"
+                    original.replace(saved)
+                    saved_originals.append((original, saved))
                 database_stage.replace(self.database_path)
-            except BaseException:
-                for original, moved in reversed(moved_sidecars):
-                    if moved.exists() or moved.is_symlink():
-                        moved.replace(original)
-                raise
-            for sidecar in self._database_sidecars():
-                sidecar.unlink(missing_ok=True)
-            for _, moved in moved_sidecars:
-                moved.unlink(missing_ok=True)
+                if validated.bundle.settings_present:
+                    settings_stage.replace(self.settings_path)
 
-            if _sha256_file(self.database_path) != validated.database_sha256:
-                raise RecoveryError("The restored database hash does not match its manifest.")
-            Database(self.database_path).validate_health().require_healthy()
-            if validated.bundle.settings_present:
-                if _sha256_file(self.settings_path) != validated.settings_sha256:
-                    raise RecoveryError("The restored settings hash does not match its manifest.")
-            elif self.settings_path.exists() or self.settings_path.is_symlink():
-                raise RecoveryError("Settings should be absent after recovery.")
+                if _sha256_file(self.database_path) != validated.database_sha256:
+                    raise RecoveryError("The restored database hash does not match its manifest.")
+                Database(self.database_path).validate_health().require_healthy()
+                if validated.bundle.settings_present:
+                    if _sha256_file(self.settings_path) != validated.settings_sha256:
+                        raise RecoveryError(
+                            "The restored settings hash does not match its manifest."
+                        )
+                elif self.settings_path.exists() or self.settings_path.is_symlink():
+                    raise RecoveryError("Settings should be absent after recovery.")
+            except BaseException:
+                for installed in (
+                    self.database_path,
+                    self.settings_path,
+                    *self._database_sidecars(),
+                ):
+                    installed.unlink(missing_ok=True)
+                for original, saved in reversed(saved_originals):
+                    if saved.exists() or saved.is_symlink():
+                        saved.replace(original)
+                raise
+            for _, saved in saved_originals:
+                with suppress(OSError):
+                    saved.unlink(missing_ok=True)
         finally:
             database_stage.unlink(missing_ok=True)
             settings_stage.unlink(missing_ok=True)

@@ -2367,6 +2367,84 @@ def test_retry_failed_indexes_requeues_documents_through_the_worker(
         _close_controller(qt_app, controller)
 
 
+def test_reindexar_marks_the_row_and_refreshes_after_indexing(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        path = app_config.university_root / subject.folder_name / "Outros" / "reindexar.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("conteudo reindexado de teste", encoding="utf-8")
+        candidate = ExistingDownload.capture(path)
+        assert candidate is not None
+        filed = controller.database.adopt_subject_file(candidate, subject.id, "Outros")
+        document = controller.database.get_file(filed.id)
+        assert document is not None
+        dialog = SubjectFilesDialog(subject, [document], app_config.university_root)
+        try:
+            controller._subject_files_dialog = dialog
+            controller._reindex_document(document.id)
+
+            assert not dialog.reindex_buttons[document.id].isEnabled()
+            assert dialog.pending_labels[document.id].text() == "A reindexar…"
+            assert not dialog.pending_labels[document.id].isHidden()
+
+            def refined() -> bool:
+                note = dialog.pending_labels.get(document.id)
+                button = dialog.reindex_buttons.get(document.id)
+                return (
+                    note is not None
+                    and note.isHidden()
+                    and button is not None
+                    and button.isEnabled()
+                )
+
+            _pump_until(qt_app, refined)
+
+            assert controller.database.search("reindexado")
+        finally:
+            controller._subject_files_dialog = None
+            dialog.deleteLater()
+            qt_app.processEvents()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_reindexar_reports_a_busy_queue(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        path = app_config.university_root / subject.folder_name / "Outros" / "ocupada.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("conteudo na fila", encoding="utf-8")
+        candidate = ExistingDownload.capture(path)
+        assert candidate is not None
+        filed = controller.database.adopt_subject_file(candidate, subject.id, "Outros")
+        document = controller.database.get_file(filed.id)
+        assert document is not None
+        dialog = SubjectFilesDialog(subject, [document], app_config.university_root)
+        try:
+            controller._subject_files_dialog = dialog
+            monkeypatch.setattr(controller.indexer, "reindex", lambda _document: False)
+
+            controller._reindex_document(document.id)
+
+            assert "fila de indexação" in dialog.pending_labels[document.id].text()
+        finally:
+            controller._subject_files_dialog = None
+            dialog.deleteLater()
+            qt_app.processEvents()
+    finally:
+        _close_controller(qt_app, controller)
+
+
 def test_stale_check_result_is_ignored_and_install_waits_for_quiet(
     qt_app: QApplication,
     app_config: AppConfig,

@@ -360,13 +360,13 @@ class DownloadWatcher:
                 retries_exhausted = False
                 with self._lock:
                     self._pending.discard(key)
+                    # A successful hand-off is not a successful move: the
+                    # controller can still fail and requeue the path, so the
+                    # bounded retry budget is only cleared once the sweep sees
+                    # the file gone (or its identity changed).
                     if paused_interrupted:
                         self._known.add(key)
                         self._paused_seen.add(key)
-                    elif delivered:
-                        self._retry_after.pop(key, None)
-                        self._retry_attempts.pop(key, None)
-                        self._retry_exhausted.pop(key, None)
                     elif retry:
                         attempt = self._retry_attempts.get(key, 0)
                         if attempt < len(self._retry_delays):

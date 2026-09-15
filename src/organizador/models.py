@@ -45,6 +45,7 @@ class InboxItem:
     suggested_kind: str
     last_error: str
     content_sha256: str = ""
+    hash_fingerprint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +67,7 @@ class FiledDocument:
     index_state: str = ""
     index_error: str = ""
     content_sha256: str = ""
+    hash_fingerprint: str = ""
 
 
 class FindingReason(StrEnum):

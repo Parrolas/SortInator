@@ -13,7 +13,7 @@ import pytest
 from organizador.config import AppConfig
 from organizador.db import Database
 from organizador.filer import FilingError, FilingService, render_final_name
-from organizador.models import FilingHint, HistoryEvent, Subject
+from organizador.models import ExistingDownload, FilingHint, HistoryEvent, Subject
 from organizador.paths import IncompleteMoveError
 
 
@@ -547,7 +547,81 @@ def test_replacement_uses_a_free_versioned_name(
     assert stored_old.current_path == folder / "Aula (versão anterior) (2).pdf"
 
 
-def test_replace_requires_the_matching_destination(
+def test_replacement_versions_a_duplicate_with_a_different_name(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    old_bytes = old.current_path.read_bytes()
+
+    source = app_config.downloads_dir / "copia.pdf"
+    source.write_bytes(b"versao nova " * 20)
+    new_item = filer.ingest(source)
+    assert new_item is not None
+    new_document = filer.file_document(
+        new_item.id, subject.id, "Slides", "Aula-copia.pdf", replace_document_id=old.id
+    )
+
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    versioned = folder / "Aula (versão anterior).pdf"
+    assert new_document.current_path == folder / "Aula-copia.pdf"
+    assert new_document.current_path.read_bytes() == b"versao nova " * 20
+    assert versioned.read_bytes() == old_bytes
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == versioned
+
+    restored = filer.undo_latest_filing()
+
+    assert restored is not None
+    assert restored.path.read_bytes() == b"versao nova " * 20
+    assert database.get_file(new_document.id) is None
+    assert (folder / "Aula.pdf").read_bytes() == old_bytes
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == folder / "Aula.pdf"
+    assert not versioned.exists()
+
+
+def test_replacement_versions_an_adopted_document(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    folder.mkdir(parents=True, exist_ok=True)
+    adopted_path = folder / "Aula.pdf"
+    adopted_path.write_bytes(b"adotado " * 20)
+    candidate = ExistingDownload.capture(adopted_path)
+    assert candidate is not None
+    adopted = database.adopt_subject_file(candidate, subject.id, "Slides")
+
+    source = app_config.downloads_dir / "aula.pdf"
+    source.write_bytes(b"versao nova " * 20)
+    item = filer.ingest(source)
+    assert item is not None
+    new_document = filer.file_document(
+        item.id, subject.id, "Slides", "Aula.pdf", replace_document_id=adopted.id
+    )
+
+    versioned = folder / "Aula (versão anterior).pdf"
+    assert (folder / "Aula.pdf").read_bytes() == b"versao nova " * 20
+    assert versioned.read_bytes() == b"adotado " * 20
+    stored_adopted = database.get_file(adopted.id)
+    assert stored_adopted is not None
+    assert stored_adopted.current_path == versioned
+
+    restored = filer.undo_latest_filing()
+
+    assert restored is not None
+    assert database.get_file(new_document.id) is None
+    assert (folder / "Aula.pdf").read_bytes() == b"adotado " * 20
+    stored_adopted = database.get_file(adopted.id)
+    assert stored_adopted is not None
+    assert stored_adopted.current_path == folder / "Aula.pdf"
+    assert not versioned.exists()
+
+
+def test_replace_requires_the_matching_subject_and_kind(
     app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
 ) -> None:
     item = filer.ingest(_download(app_config, "aula.pdf"))

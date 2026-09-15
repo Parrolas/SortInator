@@ -260,6 +260,7 @@ class AppController(QObject):
         self._deferred_downloads: list[tuple[int, Path | ExistingDownload]] = []
         self._deferred_download_keys: set[str] = set()
         self._backup_dialog: BackupListDialog | None = None
+        self._subject_files_dialog: SubjectFilesDialog | None = None
 
         self._intake_notice_names: list[str] = []
         self._intake_notice_timer = QTimer(self)
@@ -1507,15 +1508,29 @@ class AppController(QObject):
         )
         dialog.open_requested.connect(self._open_path)
         dialog.reindex_requested.connect(self._reindex_document)
-        dialog.exec()
+        self._subject_files_dialog = dialog
+        try:
+            dialog.exec()
+        finally:
+            self._subject_files_dialog = None
 
     def _reindex_document(self, file_id: int) -> None:
-        """Queue one document for extraction again."""
+        """Queue one document for extraction again, with visible feedback."""
 
         document = self.database.get_file(file_id)
         if document is None:
             return
-        self.indexer.reindex(document)
+        dialog = self._subject_files_dialog
+        if dialog is not None:
+            dialog.mark_reindexing(file_id)
+        if not self.indexer.reindex(document) and dialog is not None:
+            dialog.set_reindex_notice(
+                file_id,
+                _(
+                    "A fila de indexação está ocupada; "
+                    "o documento será indexado assim que possível."
+                ),
+            )
 
     def _retry_failed_indexes(self) -> None:
         """Queue every failed document for extraction again."""
@@ -2492,6 +2507,9 @@ class AppController(QObject):
     def _index_finished(self, file_id: int, error: str) -> None:
         if error:
             LOGGER.warning("Indexing failed for file %s: %s", file_id, error)
+        dialog = self._subject_files_dialog
+        if dialog is not None:
+            dialog.set_documents(self.database.list_subject_files(dialog.subject.id))
         self.indexer.submit_pending()
         if self.main_window.search_page.search_edit.text().strip():
             self.main_window.search_page.search()

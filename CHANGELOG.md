@@ -2,6 +2,25 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.15.1 - 2026-09-14
+
+### Fixed
+
+- A failed restore can no longer leave settings and the catalogue out of
+  sync: the database and settings are now swapped as one transaction and
+  rolled back together when any step fails.
+- Duplicate detection revalidates cached content hashes against each file's
+  size and modification time, so documents edited after filing are compared
+  by their current content instead of an outdated fingerprint.
+- "Substituir a versão anterior" now works regardless of the incoming
+  filename and for adopted documents, and undo restores each file to its
+  original name.
+- A download whose move keeps failing now exhausts its bounded retry budget
+  instead of retrying (and notifying) indefinitely.
+- Reindexar now shows its progress in the file list, refreshes the row when
+  the extraction finishes, and reports a busy queue instead of appearing to
+  do nothing.
+
 ## 0.15.0 - 2026-09-13
 
 ### Added

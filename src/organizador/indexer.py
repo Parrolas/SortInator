@@ -70,8 +70,12 @@ class DocumentIndexer:
         self._attempted: set[DocumentKey] = set()
         self._stop = Event()
 
-    def submit(self, document: FiledDocument) -> None:
-        """Queue a document unless it is already being processed."""
+    def submit(self, document: FiledDocument) -> bool:
+        """Queue a document unless it is already being processed.
+
+        Returns whether the job was accepted; a rejected job keeps whatever
+        index state its caller left so the refill pass can pick it up later.
+        """
 
         key = (document.id, document.record_token)
         if (
@@ -79,11 +83,12 @@ class DocumentIndexer:
             or key in self._attempted
             or len(self._active) >= MAX_PENDING_INDEX_JOBS
         ):
-            return
+            return False
         self._active.add(key)
         self._attempted.add(key)
         future = self._executor.submit(self.index_document, document)
         future.add_done_callback(partial(self._done, key))
+        return True
 
     def submit_pending(self) -> None:
         """Queue documents left unindexed by an earlier app session."""
@@ -99,8 +104,12 @@ class DocumentIndexer:
                 return
             self.submit(document)
 
-    def reindex(self, document: FiledDocument) -> None:
-        """Queue a document again even if a previous attempt finished or failed."""
+    def reindex(self, document: FiledDocument) -> bool:
+        """Queue a document again even if a previous attempt finished or failed.
+
+        Returns whether the job was accepted; when the queue is saturated the
+        cleared index state stays queued for the next refill pass.
+        """
 
         key = (document.id, document.record_token)
         self._attempted.discard(key)
@@ -109,7 +118,7 @@ class DocumentIndexer:
             expected_path=document.current_path,
             expected_record_token=document.record_token,
         )
-        self.submit(document)
+        return self.submit(document)
 
     def index_document(self, document: FiledDocument) -> None:
         """Extract and persist text for one supported document."""
