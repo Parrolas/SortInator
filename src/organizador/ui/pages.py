@@ -541,6 +541,12 @@ class InboxPage(QWidget):
             FindingReason.PENDING_VERSION_DESTINATION: _(
                 "Cópia da versão anterior por verificar; compara os ficheiros."
             ),
+            FindingReason.PENDING_MOVE_SOURCE: _(
+                "Origem de um movimento interrompido; não foi alterada no arranque."
+            ),
+            FindingReason.PENDING_MOVE_DESTINATION: _(
+                "Destino de um movimento interrompido; compara antes de continuar."
+            ),
             FindingReason.UNTRACKED_SUBJECT_FILE: _(
                 "Encontrado numa disciplina sem registo. Não foi movido nem alterado."
             ),

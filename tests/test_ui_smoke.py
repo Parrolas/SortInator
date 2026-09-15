@@ -31,7 +31,7 @@ from organizador.config import AppConfig
 from organizador.controller import AppController, _UndoJob
 from organizador.db import Database
 from organizador.filer import FilingService
-from organizador.models import ExistingDownload, FindingReason, Subject
+from organizador.models import ExistingDownload, FiledDocument, FindingReason, Subject
 from organizador.paths import IncompleteMoveError
 from organizador.reconcile import findings, visible_findings
 from organizador.reconcile import scan as scan_reconciliation
@@ -43,6 +43,7 @@ from organizador.recovery import (
 )
 from organizador.ui.dialogs import (
     BackupListDialog,
+    MoveDocumentDialog,
     OnboardingDialog,
     SubjectDialog,
     SubjectFilesDialog,
@@ -2441,6 +2442,104 @@ def test_reindexar_reports_a_busy_queue(
             controller._subject_files_dialog = None
             dialog.deleteLater()
             qt_app.processEvents()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_subject_files_dialog_offers_move(qt_app: QApplication) -> None:
+    del qt_app
+    subject = Subject(1, "Cálculo I", "MAT101", "#087A74", (), "MAT101 - Cálculo I", True)
+    document = FiledDocument(
+        id=7,
+        subject_id=1,
+        kind="Slides",
+        original_name="aula.pdf",
+        current_path=Path("C:/uni/MAT101 - Cálculo I/Slides/Aula.pdf"),
+        original_path=Path("C:/Downloads/aula.pdf"),
+        size=200,
+        filed_at=datetime(2026, 9, 15, 12, tzinfo=UTC),
+        indexed_at=None,
+    )
+    dialog = SubjectFilesDialog(subject, [document], Path("C:/uni/MAT101 - Cálculo I"))
+    try:
+        requested: list[int] = []
+        dialog.move_requested.connect(requested.append)
+        buttons = {control.text(): control for control in dialog.findChildren(QPushButton)}
+
+        assert "Mover" in buttons
+        buttons["Mover"].click()
+
+        assert requested == [document.id]
+    finally:
+        dialog.deleteLater()
+
+
+def test_move_dialog_requires_a_real_destination(qt_app: QApplication) -> None:
+    del qt_app
+    subject = Subject(1, "Cálculo I", "MAT101", "#087A74", (), "MAT101 - Cálculo I", True)
+    other = Subject(2, "Física", "FIS110", "#3C64A3", (), "FIS110 - Física", True)
+    document = FiledDocument(
+        id=7,
+        subject_id=1,
+        kind="Slides",
+        original_name="aula.pdf",
+        current_path=Path("C:/uni/MAT101 - Cálculo I/Slides/Aula.pdf"),
+        original_path=Path("C:/Downloads/aula.pdf"),
+        size=200,
+        filed_at=datetime(2026, 9, 15, 12, tzinfo=UTC),
+        indexed_at=None,
+    )
+    dialog = MoveDocumentDialog(document, [subject, other])
+    try:
+        assert not dialog.move_button.isEnabled()
+        assert "outro tipo" in dialog.hint_label.text()
+
+        other_kind = dialog.kind_combo.findText("Trabalhos")
+        dialog.kind_combo.setCurrentIndex(other_kind)
+        assert dialog.move_button.isEnabled()
+        assert dialog.hint_label.isHidden()
+
+        dialog.subject_combo.setCurrentIndex(dialog.subject_combo.findData(other.id))
+        dialog.kind_combo.setCurrentIndex(dialog.kind_combo.findText("Slides"))
+
+        assert dialog.selection() == (other.id, "Slides")
+    finally:
+        dialog.deleteLater()
+
+
+def test_controller_moves_a_document_through_the_worker(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        other = controller.database.add_subject(
+            "Física Geral", "FIS110", "#3C64A3", (), "FIS110 - Física Geral"
+        )
+        controller.filer.ensure_subject_structure(other)
+        path = app_config.university_root / subject.folder_name / "Outros" / "mover.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("conteudo para mover", encoding="utf-8")
+        candidate = ExistingDownload.capture(path)
+        assert candidate is not None
+        filed = controller.database.adopt_subject_file(candidate, subject.id, "Outros")
+
+        monkeypatch.setattr(MoveDocumentDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+        monkeypatch.setattr(MoveDocumentDialog, "selection", lambda self: (other.id, "Trabalhos"))
+
+        controller._open_move_dialog(filed.id)
+        target = app_config.university_root / other.folder_name / "Trabalhos" / "mover.txt"
+
+        _pump_until(qt_app, lambda: any(args[0] == "Ficheiro movido" for args, _ in notices))
+
+        assert target.is_file()
+        assert not path.exists()
+        stored = controller.database.get_file(filed.id)
+        assert stored is not None
+        assert stored.subject_id == other.id
+        assert stored.kind == "Trabalhos"
     finally:
         _close_controller(qt_app, controller)
 

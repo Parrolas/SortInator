@@ -1068,6 +1068,69 @@ def test_legacy_database_gains_duplicate_columns(database: Database) -> None:
     assert database.inspect_schema().missing_additions == ()
 
 
+def test_document_move_lifecycle_updates_the_catalog_and_pages(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    database.replace_document_pages(
+        file_id,
+        subject.name,
+        document.current_path.name,
+        ["conteudo pesquisavel"],
+        expected_path=document.current_path,
+    )
+    other = database.add_subject("Física Geral", "FIS110", "#123456", (), "FIS110 - Física Geral")
+    destination = tmp_path / "moved" / document.current_path.name
+    destination.parent.mkdir()
+    event = database.begin_document_move(file_id, other.id, "Outros", destination)
+    assert database.list_pending_moves() == [event]
+
+    moved = database.complete_document_move(
+        event.id, destination, subject_id=other.id, kind="Outros"
+    )
+
+    assert moved.subject_id == other.id
+    assert moved.kind == "Outros"
+    assert moved.current_path == destination
+    assert database.list_pending_moves() == []
+    with database.connect() as connection:
+        action = str(
+            connection.execute("SELECT action FROM events WHERE id = ?", (event.id,)).fetchone()[
+                "action"
+            ]
+        )
+        page = connection.execute(
+            "SELECT subject, title FROM document_pages WHERE file_id = ?", (str(file_id),)
+        ).fetchone()
+    assert action == "move"
+    assert page is not None
+    assert str(page["subject"]) == "Física Geral"
+    assert str(page["title"]) == destination.name
+    assert database.search("pesquisavel")
+
+
+def test_cancel_document_move_can_repoint_a_rolled_back_path(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    destination = tmp_path / "moved" / document.current_path.name
+    destination.parent.mkdir()
+    event = database.begin_document_move(file_id, other.id, "Outros", destination)
+
+    rollback = tmp_path / f"{document.current_path.stem} (revertido){document.current_path.suffix}"
+    assert database.cancel_document_move(event.id, new_path=rollback) is True
+
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.current_path == rollback
+    assert database.list_pending_moves() == []
+
+
 def test_version_rename_lifecycle_updates_the_catalog(
     database: Database, subject: Subject, tmp_path: Path
 ) -> None:

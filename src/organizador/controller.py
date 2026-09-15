@@ -64,6 +64,7 @@ from organizador.startup import refresh_windows_integration, set_launch_at_login
 from organizador.ui.dialogs import (
     BackupListDialog,
     BulkFilingDialog,
+    MoveDocumentDialog,
     OnboardingDialog,
     SubjectDialog,
     SubjectFilesDialog,
@@ -132,6 +133,13 @@ class _ReturnJob:
     inbox_id: int
     watcher: DownloadWatcher | None
     unpause: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _MoveJob:
+    file_id: int
+    subject_id: int
+    kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,6 +550,8 @@ class AppController(QObject):
             return {("path", normalise_path_key(job.path))}
         if isinstance(job, (_FileJob, _ReturnJob)):
             return {("inbox", str(job.inbox_id))}
+        if isinstance(job, _MoveJob):
+            return {("file", str(job.file_id))}
         if isinstance(job, _BulkJob):
             return {("inbox", str(item.inbox_id)) for item in job.items}
         if isinstance(job, _UndoJob):
@@ -549,7 +559,18 @@ class AppController(QObject):
         return set()
 
     def _can_transfer(self, job: object) -> bool:
-        if isinstance(job, _UndoJob) and any(key[0] == "inbox" for key in self._transfer_claims):
+        if isinstance(job, _UndoJob) and any(
+            key[0] in {"inbox", "file"} for key in self._transfer_claims
+        ):
+            return False
+        if (
+            isinstance(job, (_FileJob, _ReturnJob, _BulkJob, _MoveJob))
+            and (
+                "undo",
+                "latest",
+            )
+            in self._transfer_claims
+        ):
             return False
         if (
             isinstance(job, (_FileJob, _ReturnJob, _BulkJob))
@@ -630,6 +651,8 @@ class AppController(QObject):
             self._finish_filed(job, outcome.result, outcome.error)
         elif outcome.kind == "return" and isinstance(job, _ReturnJob):
             self._finish_returned(job, outcome.result, outcome.error)
+        elif outcome.kind == "move" and isinstance(job, _MoveJob):
+            self._finish_moved(job, outcome.result, outcome.error)
         elif outcome.kind == "undo" and isinstance(job, _UndoJob):
             self._finish_undone(job, outcome.result, outcome.error)
         elif outcome.kind == "bulk" and isinstance(job, _BulkJob):
@@ -1508,11 +1531,62 @@ class AppController(QObject):
         )
         dialog.open_requested.connect(self._open_path)
         dialog.reindex_requested.connect(self._reindex_document)
+        dialog.move_requested.connect(self._open_move_dialog)
         self._subject_files_dialog = dialog
         try:
             dialog.exec()
         finally:
             self._subject_files_dialog = None
+
+    def _open_move_dialog(self, file_id: int) -> None:
+        """Ask where a catalogued document should move to and queue it."""
+
+        document = self.database.get_file(file_id)
+        if document is None:
+            return
+        subjects = self.database.list_subjects()
+        if not subjects:
+            return
+        dialog = MoveDocumentDialog(document, subjects, self.main_window)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        subject_id, kind = dialog.selection()
+        if subject_id == document.subject_id and kind == document.kind:
+            return
+        job = _MoveJob(file_id=file_id, subject_id=subject_id, kind=kind)
+        if not self._submit_transfer(
+            "move",
+            job,
+            lambda: self.filer.move_document(file_id, subject_id, kind),
+        ):
+            QMessageBox.warning(
+                self.main_window,
+                _("Não foi possível mover"),
+                _("Espera que as operações de ficheiros terminem antes de mover."),
+            )
+            return
+        if self._subject_files_dialog is not None:
+            self._subject_files_dialog.mark_moving(file_id)
+
+    def _finish_moved(self, job: _MoveJob, result: object, error: str | None) -> None:
+        dialog = self._subject_files_dialog
+        if dialog is not None:
+            dialog.set_documents(self.database.list_subject_files(dialog.subject.id))
+        if error is not None:
+            if not self._shutting_down:
+                QMessageBox.warning(self.main_window, _("Não foi possível mover"), error)
+            return
+        if not isinstance(result, FiledDocument):
+            return
+        subject = self.database.get_subject(job.subject_id)
+        self.tray.notify(
+            _("Ficheiro movido"),
+            _("{name} está agora em {location}.").format(
+                name=result.current_path.name,
+                location=f"{subject.name if subject else job.kind} / {job.kind}",
+            ),
+        )
+        self._refresh()
 
     def _reindex_document(self, file_id: int) -> None:
         """Queue one document for extraction again, with visible feedback."""
@@ -1524,7 +1598,7 @@ class AppController(QObject):
         if dialog is not None:
             dialog.mark_reindexing(file_id)
         if not self.indexer.reindex(document) and dialog is not None:
-            dialog.set_reindex_notice(
+            dialog.set_row_notice(
                 file_id,
                 _(
                     "A fila de indexação está ocupada; "

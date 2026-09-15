@@ -662,6 +662,7 @@ class SubjectFilesDialog(QDialog):
 
     open_requested = Signal(object)
     reindex_requested = Signal(int)
+    move_requested = Signal(int)
 
     def __init__(
         self,
@@ -713,6 +714,7 @@ class SubjectFilesDialog(QDialog):
         root.addWidget(self.area, 1)
         self.pending_labels: dict[int, QLabel] = {}
         self.reindex_buttons: dict[int, QPushButton] = {}
+        self.move_buttons: dict[int, QPushButton] = {}
         self.set_documents(documents)
 
         actions = QHBoxLayout()
@@ -733,6 +735,7 @@ class SubjectFilesDialog(QDialog):
         self.documents = tuple(documents)
         self.pending_labels.clear()
         self.reindex_buttons.clear()
+        self.move_buttons.clear()
         position = self.area.verticalScrollBar().value()
         clear_layout(self.list_layout)
         if not self.documents:
@@ -753,9 +756,17 @@ class SubjectFilesDialog(QDialog):
         button = self.reindex_buttons.get(file_id)
         if button is not None:
             button.setEnabled(False)
-        self.set_reindex_notice(file_id, _("A reindexar…"))
+        self.set_row_notice(file_id, _("A reindexar…"))
 
-    def set_reindex_notice(self, file_id: int, message: str) -> None:
+    def mark_moving(self, file_id: int) -> None:
+        """Show that one document is being moved to another folder."""
+
+        button = self.move_buttons.get(file_id)
+        if button is not None:
+            button.setEnabled(False)
+        self.set_row_notice(file_id, _("A mover…"))
+
+    def set_row_notice(self, file_id: int, message: str) -> None:
         """Attach one transient status message to a document row."""
 
         note = self.pending_labels.get(file_id)
@@ -803,9 +814,99 @@ class SubjectFilesDialog(QDialog):
         )
         self.reindex_buttons[document.id] = reindex_button
         row_layout.addWidget(reindex_button)
+        move_button = button(_("Mover"))
+        move_button.clicked.connect(
+            lambda checked=False, file_id=document.id: self.move_requested.emit(file_id)
+        )
+        self.move_buttons[document.id] = move_button
+        row_layout.addWidget(move_button)
         open_button = button(_("Abrir"), variant="quiet")
         open_button.clicked.connect(
             lambda checked=False, path=document.current_path: self.open_requested.emit(path)
         )
         row_layout.addWidget(open_button)
         return row
+
+
+class MoveDocumentDialog(QDialog):
+    """Choose the new subject and type folder for a catalogued document."""
+
+    def __init__(
+        self,
+        document: FiledDocument,
+        subjects: Sequence[Subject],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.document = document
+        self.setWindowTitle(_("Mover ficheiro"))
+        self.setModal(True)
+        self.setMinimumWidth(430)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(28, 24, 28, 22)
+        root.setSpacing(12)
+        root.addWidget(label(_("Mover ficheiro"), "PageTitle"))
+        root.addWidget(label(document.current_path.name, "RowTitle"))
+
+        form = QFormLayout()
+        self.subject_combo = QComboBox()
+        for subject in subjects:
+            self.subject_combo.addItem(subject.name, subject.id)
+        current_subject = self.subject_combo.findData(document.subject_id)
+        if current_subject >= 0:
+            self.subject_combo.setCurrentIndex(current_subject)
+        form.addRow(_("Disciplina"), self.subject_combo)
+        self.kind_combo = QComboBox()
+        for kind in FILE_KINDS:
+            self.kind_combo.addItem(kind)
+        current_kind = self.kind_combo.findText(document.kind)
+        if current_kind >= 0:
+            self.kind_combo.setCurrentIndex(current_kind)
+        form.addRow(_("Tipo"), self.kind_combo)
+        root.addLayout(form)
+
+        self.hint_label = label(_("Escolhe outra disciplina ou outro tipo para mover."), "Muted")
+        self.hint_label.setWordWrap(True)
+        root.addWidget(self.hint_label)
+        self.error_label = label("", "ErrorText")
+        self.error_label.setWordWrap(True)
+        root.addWidget(self.error_label)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel = button(_("Cancelar"))
+        cancel.clicked.connect(self.reject)
+        self.move_button = button(_("Mover"), variant="primary")
+        self.move_button.clicked.connect(self._confirm)
+        actions.addWidget(cancel)
+        actions.addWidget(self.move_button)
+        root.addLayout(actions)
+
+        self.subject_combo.currentIndexChanged.connect(self._update_move_button)
+        self.kind_combo.currentIndexChanged.connect(self._update_move_button)
+        self._update_move_button()
+
+    def selection(self) -> tuple[int, str]:
+        """Return the chosen subject id and document type."""
+
+        return int(self.subject_combo.currentData()), self.kind_combo.currentText()
+
+    def show_error(self, message: str) -> None:
+        """Explain a recoverable failure without closing the dialog."""
+
+        self.error_label.setText(message)
+
+    def _update_move_button(self) -> None:
+        subject_id, kind = self.selection()
+        changed = (subject_id, kind) != (self.document.subject_id, self.document.kind)
+        self.move_button.setEnabled(changed)
+        self.hint_label.setVisible(not changed)
+        if changed:
+            self.error_label.clear()
+
+    def _confirm(self) -> None:
+        subject_id, kind = self.selection()
+        if subject_id == self.document.subject_id and kind == self.document.kind:
+            return
+        self.accept()

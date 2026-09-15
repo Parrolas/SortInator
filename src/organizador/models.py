@@ -78,6 +78,8 @@ class FindingReason(StrEnum):
     PENDING_INGEST_DESTINATION = "pending_ingest_destination"
     PENDING_VERSION_SOURCE = "pending_version_source"
     PENDING_VERSION_DESTINATION = "pending_version_destination"
+    PENDING_MOVE_SOURCE = "pending_move_source"
+    PENDING_MOVE_DESTINATION = "pending_move_destination"
     MISSING_DOCUMENT = "missing_document"
     BROKEN_UNDO_EVENT = "broken_undo_event"
     PENDING_FILING_SOURCE = "pending_filing_source"
@@ -250,6 +252,7 @@ class ReconciliationReport:
     incomplete: bool = False
     pending_ingest_events: tuple[HistoryEvent, ...] = ()
     pending_version_events: tuple[HistoryEvent, ...] = ()
+    pending_move_events: tuple[HistoryEvent, ...] = ()
 
     @property
     def finding_count(self) -> int:
@@ -270,6 +273,7 @@ class ReconciliationReport:
             + len(self.subject_folder_collisions)
             + len(self.pending_ingest_events)
             + len(self.pending_version_events)
+            + len(self.pending_move_events)
         )
 
 

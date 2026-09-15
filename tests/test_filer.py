@@ -260,6 +260,124 @@ def test_return_falls_back_to_downloads_when_origin_disappeared(
     assert destination.parent == app_config.downloads_dir
 
 
+def test_move_document_between_kinds_and_subjects(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    other = database.add_subject(
+        "Física Geral", "FIS110", "#3C64A3", (), filer.subject_folder_name("Física Geral", "FIS110")
+    )
+    filer.ensure_subject_structure(other)
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+
+    moved = filer.move_document(document.id, subject.id, "Trabalhos")
+
+    target = app_config.university_root / subject.folder_name / "Trabalhos" / "Aula.pdf"
+    assert moved.current_path == target
+    assert target.is_file()
+    assert not document.current_path.exists()
+    assert moved.kind == "Trabalhos"
+    assert moved.subject_id == subject.id
+
+    stored = database.get_file(document.id)
+    assert stored is not None
+    assert stored.current_path == target
+
+    across = filer.move_document(document.id, other.id, "Outros")
+
+    cross_target = app_config.university_root / other.folder_name / "Outros" / "Aula.pdf"
+    assert across.current_path == cross_target
+    assert across.subject_id == other.id
+    assert cross_target.is_file()
+    assert not target.exists()
+    with database.connect() as connection:
+        actions = [
+            str(row["action"])
+            for row in connection.execute(
+                "SELECT action FROM events WHERE file_id = ? ORDER BY id", (document.id,)
+            )
+        ]
+    assert actions[-2:] == ["move", "move"]
+
+
+def test_move_document_is_collision_safe(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    folder = app_config.university_root / subject.folder_name
+    (folder / "Trabalhos" / "Aula.pdf").write_bytes(b"occupied")
+
+    moved = filer.move_document(document.id, subject.id, "Trabalhos")
+
+    assert moved.current_path == folder / "Trabalhos" / "Aula (2).pdf"
+    assert moved.current_path.read_bytes() == b"x" * 200
+    assert (folder / "Trabalhos" / "Aula.pdf").read_bytes() == b"occupied"
+    assert database.activity_summary().collisions_renamed == 1
+
+
+def test_move_document_refuses_archived_subjects_and_same_place(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    archived = database.add_subject(
+        "Arquivada", "ARQ", "#123456", (), filer.subject_folder_name("Arquivada", "ARQ")
+    )
+    filer.ensure_subject_structure(archived)
+    database.set_subject_active(archived.id, False)
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+
+    same = filer.move_document(document.id, subject.id, "Slides")
+    assert same.current_path == document.current_path
+
+    with pytest.raises(FilingError, match="disciplina ativa"):
+        filer.move_document(document.id, archived.id, "Slides")
+    with pytest.raises(FilingError, match="tipo de documento"):
+        filer.move_document(document.id, subject.id, "Inválido")
+
+    assert document.current_path.is_file()
+
+
+def test_undo_follows_a_document_moved_after_filing(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+
+    moved = filer.move_document(document.id, subject.id, "Trabalhos")
+    assert moved.current_path.name == "Aula.pdf"
+
+    restored = filer.undo_latest_filing()
+
+    assert restored is not None
+    assert restored.path.parent == app_config.inbox_dir
+    assert restored.path.read_bytes() == b"x" * 200
+    assert not moved.current_path.exists()
+    assert database.get_file(document.id) is None
+
+
+def test_scan_tolerates_a_moved_document_with_an_old_filing_event(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    filer.move_document(document.id, subject.id, "Trabalhos")
+
+    from organizador.reconcile import scan
+
+    report = scan(app_config, database)
+
+    assert report.broken_undo_events == ()
+    assert report.missing_documents == ()
+    assert report.pending_move_events == ()
+    assert report.untracked_subject_files == ()
+
+
 def test_undo_restores_latest_document_to_inbox(
     app_config: AppConfig, filer: FilingService, subject: Subject
 ) -> None:

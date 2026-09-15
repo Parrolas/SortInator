@@ -30,6 +30,8 @@ tópico e tipo de conteúdo, com cópias de segurança do catálogo.
 - "Mais tarde" mantém o ficheiro na Caixa de Entrada; "✕" e "Não é da
   universidade" devolvem-no à pasta de origem.
 - Organiza sem substituir silenciosamente ficheiros existentes.
+- Move um documento já organizado para outro tipo da mesma disciplina ou para
+  outra disciplina, mantendo o catálogo e a pesquisa atualizados.
 
 **Pesquisa e indexação**
 

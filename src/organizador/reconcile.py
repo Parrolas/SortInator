@@ -66,6 +66,7 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     documents = database.list_files()
     pending_ingests = tuple(database.list_pending_ingests())
     pending_versions = tuple(database.list_pending_versions())
+    pending_moves = tuple(database.list_pending_moves())
     pending_filings = tuple(database.list_pending_filings())
     pending_returns = tuple(database.list_pending_returns())
     pending_undos = tuple(database.list_pending_undos())
@@ -89,6 +90,9 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     )
     tracked_document_paths.update(
         normalise_path_key(event.destination_path) for event in pending_versions
+    )
+    tracked_document_paths.update(
+        normalise_path_key(event.destination_path) for event in pending_moves
     )
     inbox_orphans: list[ExistingDownload] = []
     untracked_subject_files: list[Path] = []
@@ -133,7 +137,15 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     document_probes = {document.id: _probe(document.current_path, state) for document in documents}
     pending_file_ids = {event.file_id for event in pending_undos if event.file_id is not None}
     undoable_filings = database.list_undoable_filings()
-    undo_probes = {event.id: _probe(event.destination_path, state) for event in undoable_filings}
+    undo_probes = {
+        event.id: _probe(
+            document_by_id[event.file_id].current_path
+            if event.file_id is not None and event.file_id in document_by_id
+            else event.destination_path,
+            state,
+        )
+        for event in undoable_filings
+    }
     broken_candidates = tuple(
         event for event in undoable_filings if undo_probes[event.id] is _ProbeState.MISSING
     )
@@ -159,6 +171,8 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
         matched_orphan_paths.add(normalise_path_key(restored_candidate.path))
 
     repairable_file_ids = pending_file_ids | legacy_file_ids
+    pending_move_file_ids = {event.file_id for event in pending_moves if event.file_id is not None}
+    repairable_file_ids |= pending_move_file_ids
     missing_documents = tuple(
         document
         for document in documents
@@ -168,7 +182,9 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
     broken_undo = tuple(
         event
         for event in broken_candidates
-        if event.file_id not in pending_file_ids and event.id not in legacy_event_ids
+        if event.file_id not in pending_file_ids
+        and event.id not in legacy_event_ids
+        and event.file_id not in pending_move_file_ids
     )
     unsafe_paths = {
         *(item.path for item in inbox_items if inbox_probes.get(item.id) is _ProbeState.UNSAFE),
@@ -189,6 +205,7 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
         *pending_undos,
         *pending_ingests,
         *pending_versions,
+        *pending_moves,
     ):
         for path in (event.source_path, event.destination_path):
             if _probe(path, state) is _ProbeState.UNSAFE:
@@ -216,6 +233,7 @@ def scan(config: AppConfig, database: Database) -> ReconciliationReport:
         incomplete=state.incomplete,
         pending_ingest_events=pending_ingests,
         pending_version_events=pending_versions,
+        pending_move_events=pending_moves,
     )
 
 
@@ -320,6 +338,36 @@ def apply(database: Database, report: ReconciliationReport) -> ReconciliationOut
             and database.cancel_pending_inbox_operation(
                 pending.id, current_path=pending.source_path
             )
+        ):
+            cancelled_operation_event_ids.append(pending.id)
+
+    for pending in report.pending_move_events:
+        source = _probe(pending.source_path)
+        destination = _probe(pending.destination_path)
+        document = database.get_file(pending.file_id) if pending.file_id is not None else None
+        if (
+            source is _ProbeState.MISSING
+            and isinstance(destination, ExistingDownload)
+            and document is not None
+            and pending.subject_id is not None
+            and pending.kind in FILE_KINDS
+            and destination.size == document.size
+        ):
+            try:
+                database.complete_document_move(
+                    pending.id,
+                    pending.destination_path,
+                    subject_id=pending.subject_id,
+                    kind=pending.kind,
+                )
+            except LookupError:
+                pass
+            else:
+                completed_operation_event_ids.append(pending.id)
+        elif (
+            isinstance(source, ExistingDownload)
+            and destination is _ProbeState.MISSING
+            and database.cancel_document_move(pending.id)
         ):
             cancelled_operation_event_ids.append(pending.id)
 
@@ -449,6 +497,17 @@ def findings(report: ReconciliationReport) -> tuple[ReconciliationFinding, ...]:
                 ),
                 ReconciliationFinding(
                     event.destination_path, FindingReason.PENDING_VERSION_DESTINATION, event.id
+                ),
+            )
+        )
+    for event in report.pending_move_events:
+        result.extend(
+            (
+                ReconciliationFinding(
+                    event.source_path, FindingReason.PENDING_MOVE_SOURCE, event.id
+                ),
+                ReconciliationFinding(
+                    event.destination_path, FindingReason.PENDING_MOVE_DESTINATION, event.id
                 ),
             )
         )

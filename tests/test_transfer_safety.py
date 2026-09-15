@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from organizador import reconcile, updater
 from organizador.config import AppConfig
-from organizador.controller import AppController, _BulkItem, _BulkJob, _UndoJob
+from organizador.controller import AppController, _BulkItem, _BulkJob, _MoveJob, _UndoJob
 from organizador.db import Database
 from organizador.filer import FilingError, FilingService
 from organizador.models import FindingReason, Subject
@@ -106,6 +106,63 @@ def test_fifo_queue_rejects_conflicting_file_return_undo_and_bulk(
     assert (folder / "same.pdf").read_bytes() == b"coursework" * 30
     assert (folder / "same (2).pdf").read_bytes() == b"coursework" * 30
     assert len(controller.database.list_files()) == 2
+
+
+def test_move_and_undo_claims_exclude_each_other(
+    qt_app: QApplication,
+    controller: AppController,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = inbox(controller, "unico.pdf")
+    controller._file_item(first, subject.id, "Slides", "unico.pdf", False, None)
+    pump(qt_app, lambda: controller._pending_transfers == 0)
+    document = controller.database.list_files()[0]
+
+    started, release = threading.Event(), threading.Event()
+    real_move = controller.filer.move_document
+
+    def slow_move(file_id: int, subject_id: int, kind: str) -> object:
+        started.set()
+        assert release.wait(10)
+        return real_move(file_id, subject_id, kind)
+
+    monkeypatch.setattr(controller.filer, "move_document", slow_move)
+    move_job = _MoveJob(document.id, subject.id, "Trabalhos")
+    try:
+        assert controller._submit_transfer(
+            "move",
+            move_job,
+            lambda: controller.filer.move_document(document.id, subject.id, "Trabalhos"),
+        )
+        assert started.wait(5)
+        assert not controller._submit_transfer("undo", _UndoJob(), lambda: None)
+    finally:
+        release.set()
+    pump(qt_app, lambda: controller._pending_transfers == 0)
+    moved = controller.database.get_file(document.id)
+    assert moved is not None
+    assert moved.kind == "Trabalhos"
+
+    started_undo, release_undo = threading.Event(), threading.Event()
+    real_undo = controller.filer.undo_latest_filing
+
+    def slow_undo() -> object:
+        started_undo.set()
+        assert release_undo.wait(10)
+        return real_undo()
+
+    monkeypatch.setattr(controller.filer, "undo_latest_filing", slow_undo)
+    try:
+        controller._undo()
+        assert started_undo.wait(5)
+        assert not controller._submit_transfer(
+            "move", _MoveJob(document.id, subject.id, "Outros"), lambda: None
+        )
+    finally:
+        release_undo.set()
+    pump(qt_app, lambda: controller._pending_transfers == 0)
+    assert controller.database.list_files() == []
 
 
 def test_quit_keeps_event_loop_alive_until_accepted_cross_drive_copy_finishes(

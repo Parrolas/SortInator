@@ -2,6 +2,22 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.16.0 - 2026-09-15
+
+### Added
+
+- Mover: a catalogued document can be moved to another type folder of the
+  same subject or to another subject entirely, from the subject's file list.
+  The move keeps the filename, is collision-safe and journaled, updates the
+  catalog and the search index in place, and interrupted moves are recovered
+  at startup.
+
+### Changed
+
+- Undo follows the document: "Desfazer última organização" restores a filed
+  document from its current folder, so moving it after filing no longer
+  breaks undo.
+
 ## 0.15.1 - 2026-09-14
 
 ### Fixed

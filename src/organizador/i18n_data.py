@@ -848,6 +848,33 @@ EN_STRINGS: dict[str, str] = {
         "Indexing failed — the file is still searchable by name."
     ),
     "Reindexar": "Reindex",
+    "Mover": "Move",
+    "Mover ficheiro": "Move file",
+    "A mover…": "Moving…",
+    "Ficheiro movido": "File moved",
+    "{name} está agora em {location}.": "{name} is now in {location}.",
+    "Não foi possível mover": "Could not move",
+    "Espera que as operações de ficheiros terminem antes de mover.": (
+        "Wait for the file operations to finish before moving."
+    ),
+    "Escolhe outra disciplina ou outro tipo para mover.": (
+        "Choose another subject or another type to move."
+    ),
+    "Este documento já não está no catálogo.": ("This document is no longer in the catalog."),
+    "Não foi possível preparar o histórico do movimento.": ("Could not prepare the move history."),
+    "O movimento ficou incompleto. O original e a cópia foram mantidos; revê ambos antes de continuar.": (
+        "The move was left incomplete. The original and the copy were kept; "
+        "review both before continuing."
+    ),
+    "Não foi possível atualizar o histórico. Revê os ficheiros antes de repetir.": (
+        "Could not update the history. Review the files before retrying."
+    ),
+    "Origem de um movimento interrompido; não foi alterada no arranque.": (
+        "Source of an interrupted move; it was not changed at startup."
+    ),
+    "Destino de um movimento interrompido; compara antes de continuar.": (
+        "Destination of an interrupted move; compare before continuing."
+    ),
     "A reindexar…": "Reindexing…",
     "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
         "The indexing queue is busy; the document will be indexed as soon as possible."
@@ -1749,6 +1776,35 @@ ES_STRINGS: dict[str, str] = {
         "La indexación falló — el archivo sigue siendo buscable por su nombre."
     ),
     "Reindexar": "Reindexar",
+    "Mover": "Mover",
+    "Mover ficheiro": "Mover archivo",
+    "A mover…": "Moviendo…",
+    "Ficheiro movido": "Archivo movido",
+    "{name} está agora em {location}.": "{name} está ahora en {location}.",
+    "Não foi possível mover": "No se pudo mover",
+    "Espera que as operações de ficheiros terminem antes de mover.": (
+        "Espera a que terminen las operaciones de archivos antes de mover."
+    ),
+    "Escolhe outra disciplina ou outro tipo para mover.": (
+        "Elige otra asignatura u otro tipo para mover."
+    ),
+    "Este documento já não está no catálogo.": ("Este documento ya no está en el catálogo."),
+    "Não foi possível preparar o histórico do movimento.": (
+        "No se pudo preparar el historial del movimiento."
+    ),
+    "O movimento ficou incompleto. O original e a cópia foram mantidos; revê ambos antes de continuar.": (
+        "El movimiento quedó incompleto. El original y la copia se mantuvieron; "
+        "revísalos antes de continuar."
+    ),
+    "Não foi possível atualizar o histórico. Revê os ficheiros antes de repetir.": (
+        "No se pudo actualizar el historial. Revisa los archivos antes de repetir."
+    ),
+    "Origem de um movimento interrompido; não foi alterada no arranque.": (
+        "Origen de un movimiento interrumpido; no se modificó al arrancar."
+    ),
+    "Destino de um movimento interrompido; compara antes de continuar.": (
+        "Destino de un movimiento interrumpido; compara antes de continuar."
+    ),
     "A reindexar…": "Reindexando…",
     "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
         "La cola de indexación está ocupada; el documento se indexará lo antes posible."
@@ -2667,6 +2723,35 @@ FR_STRINGS: dict[str, str] = {
         "L'indexation a échoué — le fichier reste trouvable par son nom."
     ),
     "Reindexar": "Réindexer",
+    "Mover": "Déplacer",
+    "Mover ficheiro": "Déplacer le fichier",
+    "A mover…": "Déplacement…",
+    "Ficheiro movido": "Fichier déplacé",
+    "{name} está agora em {location}.": "{name} est maintenant dans {location}.",
+    "Não foi possível mover": "Impossible de déplacer",
+    "Espera que as operações de ficheiros terminem antes de mover.": (
+        "Attends la fin des opérations sur les fichiers avant de déplacer."
+    ),
+    "Escolhe outra disciplina ou outro tipo para mover.": (
+        "Choisis une autre matière ou un autre type pour déplacer."
+    ),
+    "Este documento já não está no catálogo.": ("Ce document n'est plus dans le catalogue."),
+    "Não foi possível preparar o histórico do movimento.": (
+        "Impossible de préparer l'historique du déplacement."
+    ),
+    "O movimento ficou incompleto. O original e a cópia foram mantidos; revê ambos antes de continuar.": (
+        "Le déplacement est resté incomplet. L'original et la copie ont été "
+        "conservés ; vérifie-les avant de continuer."
+    ),
+    "Não foi possível atualizar o histórico. Revê os ficheiros antes de repetir.": (
+        "Impossible de mettre à jour l'historique. Vérifie les fichiers avant de réessayer."
+    ),
+    "Origem de um movimento interrompido; não foi alterada no arranque.": (
+        "Origine d'un déplacement interrompu ; elle n'a pas été modifiée au démarrage."
+    ),
+    "Destino de um movimento interrompido; compara antes de continuar.": (
+        "Destination d'un déplacement interrompu ; compare avant de continuer."
+    ),
     "A reindexar…": "Réindexation…",
     "A fila de indexação está ocupada; o documento será indexado assim que possível.": (
         "La file d'indexation est occupée ; le document sera indexé dès que possible."

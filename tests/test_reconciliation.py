@@ -407,6 +407,98 @@ def test_prepared_filing_with_a_size_mismatch_is_left_for_review(
     assert FindingReason.PENDING_FILING_DESTINATION in reasons
 
 
+def test_prepared_move_is_completed_after_a_post_move_crash(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+) -> None:
+    source = app_config.downloads_dir / "mover-interrompido.pdf"
+    source.write_bytes(b"pending move" * 20)
+    item = filer.ingest(source)
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    filer.ensure_subject_structure(other)
+    destination = app_config.university_root / other.folder_name / "Outros" / "Aula.pdf"
+    pending = database.begin_document_move(document.id, other.id, "Outros", destination)
+    document.current_path.replace(destination)
+    before = _snapshot(app_config.university_root)
+
+    report = scan(app_config, database)
+
+    assert report.pending_move_events == (pending,)
+    assert report.untracked_subject_files == ()
+    assert report.missing_documents == ()
+
+    outcome = apply(database, report)
+
+    assert _snapshot(app_config.university_root) == before
+    assert outcome.completed_operation_event_ids == (pending.id,)
+    stored = database.get_file(document.id)
+    assert stored is not None
+    assert stored.current_path == destination
+    assert stored.subject_id == other.id
+    assert stored.kind == "Outros"
+    assert database.list_pending_moves() == []
+    assert database.activity_summary().operations_recovered == 1
+
+
+def test_prepared_move_with_a_size_mismatch_is_left_for_review(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+) -> None:
+    source = app_config.downloads_dir / "mover-tamanho.pdf"
+    source.write_bytes(b"pending move" * 20)
+    item = filer.ingest(source)
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    filer.ensure_subject_structure(other)
+    destination = app_config.university_root / other.folder_name / "Outros" / "Aula.pdf"
+    pending = database.begin_document_move(document.id, other.id, "Outros", destination)
+    document.current_path.replace(destination)
+    destination.write_bytes(b"tiny")
+
+    report = scan(app_config, database)
+    outcome = apply(database, report)
+
+    assert outcome.completed_operation_event_ids == ()
+    assert database.list_pending_moves() == [pending]
+    reasons = {finding.reason for finding in findings(report)}
+    assert FindingReason.PENDING_MOVE_SOURCE in reasons
+    assert FindingReason.PENDING_MOVE_DESTINATION in reasons
+
+
+def test_prepared_move_is_cancelled_when_the_file_never_left(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+) -> None:
+    source = app_config.downloads_dir / "mover-cancelado.pdf"
+    source.write_bytes(b"pending move" * 20)
+    item = filer.ingest(source)
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    filer.ensure_subject_structure(other)
+    destination = app_config.university_root / other.folder_name / "Outros" / "Aula.pdf"
+    pending = database.begin_document_move(document.id, other.id, "Outros", destination)
+
+    report = scan(app_config, database)
+    outcome = apply(database, report)
+
+    assert outcome.cancelled_operation_event_ids == (pending.id,)
+    assert database.list_pending_moves() == []
+    stored = database.get_file(document.id)
+    assert stored is not None
+    assert stored.current_path == document.current_path
+    assert stored.subject_id == subject.id
+
+
 def test_prepared_undo_with_a_size_mismatch_is_left_for_review(
     app_config: AppConfig,
     database: Database,

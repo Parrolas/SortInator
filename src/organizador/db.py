@@ -1847,11 +1847,22 @@ class Database:
             ).fetchall()
         return [self._event(row) for row in rows]
 
-    def begin_filing_undo(self, event: HistoryEvent, restored_path: Path) -> HistoryEvent:
-        """Persist an undo destination before the document is moved."""
+    def begin_filing_undo(
+        self,
+        event: HistoryEvent,
+        restored_path: Path,
+        *,
+        source_path: Path | None = None,
+    ) -> HistoryEvent:
+        """Persist an undo destination before the document is moved.
+
+        ``source_path`` is the document's current location, which differs from
+        the filing destination when the document was moved after being filed.
+        """
 
         if event.file_id is None or event.inbox_id is None:
             raise ValueError("O evento não contém os dados necessários para desfazer.")
+        actual_source = source_path or event.destination_path
         with self.connect() as connection:
             existing = connection.execute(
                 """
@@ -1869,14 +1880,16 @@ class Database:
             cursor = connection.execute(
                 """
                 INSERT INTO events(
-                    action, source_path, destination_path, file_id, inbox_id, created_at
-                ) VALUES ('undo_pending', ?, ?, ?, ?, ?)
+                    action, source_path, destination_path, file_id, inbox_id,
+                    related_event_id, created_at
+                ) VALUES ('undo_pending', ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    str(event.destination_path),
+                    str(actual_source),
                     str(restored_path),
                     event.file_id,
                     event.inbox_id,
+                    event.id,
                     _now(),
                 ),
             )
@@ -1913,6 +1926,144 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM events WHERE action = 'return_pending' ORDER BY id ASC"
+            ).fetchall()
+        return [self._event(row) for row in rows]
+
+    def begin_document_move(
+        self,
+        file_id: int,
+        subject_id: int,
+        kind: str,
+        destination_path: Path,
+    ) -> HistoryEvent:
+        """Persist a catalogued document's new location before its move."""
+
+        with self.connect() as connection:
+            document = connection.execute(
+                "SELECT current_path FROM files WHERE id = ? AND catalog_state = 'active'",
+                (file_id,),
+            ).fetchone()
+            if document is None:
+                raise LookupError("O documento já não está no catálogo.")
+            existing = connection.execute(
+                """
+                SELECT * FROM events
+                WHERE action = 'move_pending' AND file_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (file_id,),
+            ).fetchone()
+            if existing is not None:
+                pending = self._event(existing)
+                if pending.destination_path != destination_path:
+                    raise RuntimeError("Já existe um movimento pendente para este documento.")
+                return pending
+            cursor = connection.execute(
+                """
+                INSERT INTO events(
+                    action, source_path, destination_path, file_id,
+                    subject_id, kind, created_at
+                ) VALUES ('move_pending', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(document["current_path"]),
+                    str(destination_path),
+                    file_id,
+                    subject_id,
+                    kind,
+                    _now(),
+                ),
+            )
+            if cursor.lastrowid is None:
+                raise RuntimeError("A base de dados não devolveu o id do movimento.")
+            event_id = cursor.lastrowid
+            connection.commit()
+            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        if row is None:  # pragma: no cover - defensive database invariant
+            raise RuntimeError("O movimento pendente foi criado mas não pôde ser lido.")
+        return self._event(row)
+
+    def complete_document_move(
+        self,
+        event_id: int,
+        destination_path: Path,
+        *,
+        subject_id: int,
+        kind: str,
+    ) -> FiledDocument:
+        """Atomically record a completed move between subject folders."""
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            marker = connection.execute(
+                """
+                SELECT file_id FROM events
+                WHERE id = ? AND action = 'move_pending' AND destination_path = ?
+                  AND subject_id = ? AND kind = ?
+                """,
+                (event_id, str(destination_path), subject_id, kind),
+            ).fetchone()
+            if marker is None or marker["file_id"] is None:
+                raise LookupError("O movimento pendente já foi concluído ou cancelado.")
+            file_id = int(marker["file_id"])
+            updated = connection.execute(
+                """
+                UPDATE files
+                SET subject_id = ?, kind = ?, current_path = ?
+                WHERE id = ? AND catalog_state = 'active'
+                """,
+                (subject_id, kind, str(destination_path), file_id),
+            )
+            if updated.rowcount != 1:
+                raise LookupError("O documento já não está no catálogo.")
+            subject_row = connection.execute(
+                "SELECT name FROM subjects WHERE id = ?", (subject_id,)
+            ).fetchone()
+            subject_name = str(subject_row["name"]) if subject_row is not None else ""
+            connection.execute(
+                "UPDATE document_pages SET subject = ?, title = ? WHERE file_id = ?",
+                (subject_name, destination_path.name, str(file_id)),
+            )
+            connection.execute("UPDATE events SET action = 'move' WHERE id = ?", (event_id,))
+            connection.commit()
+        document = self.get_file(file_id)
+        if document is None:  # pragma: no cover - defensive database invariant
+            raise LookupError("O documento movido não pôde ser lido.")
+        return document
+
+    def cancel_document_move(self, event_id: int, *, new_path: Path | None = None) -> bool:
+        """Discard a prepared move whose filesystem move never happened.
+
+        When a rolled-back move left the document under a new name, ``new_path``
+        re-points the catalog row before the marker is removed.
+        """
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            marker = connection.execute(
+                "SELECT file_id, source_path FROM events WHERE id = ? AND action = 'move_pending'",
+                (event_id,),
+            ).fetchone()
+            if marker is None:
+                return False
+            if new_path is not None and marker["file_id"] is not None:
+                connection.execute(
+                    """
+                    UPDATE files SET current_path = ?
+                    WHERE id = ? AND current_path = ?
+                    """,
+                    (str(new_path), int(marker["file_id"]), str(marker["source_path"])),
+                )
+            connection.execute("DELETE FROM events WHERE id = ?", (event_id,))
+            connection.commit()
+        return True
+
+    def list_pending_moves(self) -> list[HistoryEvent]:
+        """List document moves interrupted before their database commit."""
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM events WHERE action = 'move_pending' ORDER BY id ASC"
             ).fetchall()
         return [self._event(row) for row in rows]
 
@@ -2029,10 +2180,9 @@ class Database:
             event = connection.execute(
                 """
                 SELECT id FROM events
-                WHERE id = ? AND action = 'file' AND undone_at IS NULL
-                  AND file_id = ? AND destination_path = ?
+                WHERE id = ? AND action = 'file' AND undone_at IS NULL AND file_id = ?
                 """,
-                (event_id, file_id, str(previous_path)),
+                (event_id, file_id),
             ).fetchone()
             marker = connection.execute(
                 "SELECT id FROM events WHERE id = ? AND action = 'undo_pending'",
@@ -2063,15 +2213,25 @@ class Database:
             return None
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            event_row = connection.execute(
-                """
-                SELECT * FROM events
-                WHERE action = 'file' AND file_id = ? AND inbox_id = ?
-                  AND undone_at IS NULL AND destination_path = ?
-                ORDER BY id DESC LIMIT 1
-                """,
-                (pending.file_id, pending.inbox_id, str(pending.source_path)),
-            ).fetchone()
+            event_row = None
+            if pending.related_event_id is not None:
+                event_row = connection.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE id = ? AND action = 'file' AND undone_at IS NULL
+                    """,
+                    (pending.related_event_id,),
+                ).fetchone()
+            if event_row is None:
+                event_row = connection.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE action = 'file' AND file_id = ? AND inbox_id = ?
+                      AND undone_at IS NULL AND destination_path = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (pending.file_id, pending.inbox_id, str(pending.source_path)),
+                ).fetchone()
             if event_row is None:
                 return None
             event = self._event(event_row)
@@ -2080,6 +2240,7 @@ class Database:
                 event,
                 pending.destination_path,
                 pending_event_id=pending.id,
+                source_path=pending.source_path,
             ):
                 return None
             connection.commit()
@@ -2105,13 +2266,16 @@ class Database:
         restored_path: Path,
         *,
         version_event: HistoryEvent | None = None,
+        source_path: Path | None = None,
     ) -> None:
         """Update persistence after the filer restores a document to the inbox."""
 
         if event.file_id is None or event.inbox_id is None:
             raise ValueError("O evento não contém os dados necessários para desfazer.")
         with self.connect() as connection:
-            if not self._complete_filing_undo(connection, event, restored_path):
+            if not self._complete_filing_undo(
+                connection, event, restored_path, source_path=source_path
+            ):
                 raise LookupError("A organização já não está disponível para desfazer.")
             if version_event is not None:
                 if version_event.file_id is None:
@@ -2142,11 +2306,13 @@ class Database:
         restored_path: Path,
         *,
         pending_event_id: int | None = None,
+        source_path: Path | None = None,
     ) -> bool:
         """Apply the database half of a completed undo in one transaction."""
 
         if event.file_id is None or event.inbox_id is None:
             return False
+        expected_source = source_path or event.destination_path
         current = connection.execute(
             """
             SELECT id FROM events
@@ -2160,7 +2326,7 @@ class Database:
             WHERE id = ? AND inbox_id = ? AND current_path = ?
               AND origin = 'filed' AND catalog_state = 'active'
             """,
-            (event.file_id, event.inbox_id, str(event.destination_path)),
+            (event.file_id, event.inbox_id, str(expected_source)),
         ).fetchone()
         inbox = connection.execute(
             "SELECT id FROM inbox WHERE id = ?", (event.inbox_id,)

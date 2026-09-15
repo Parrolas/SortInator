@@ -385,6 +385,75 @@ class FilingService:
             return None
         return event
 
+    def move_document(self, file_id: int, subject_id: int, kind: str) -> FiledDocument:
+        """Move a catalogued document to another subject folder or kind."""
+
+        document = self.database.get_file(file_id)
+        if document is None:
+            raise FilingError(_("Este documento já não está no catálogo."))
+        subject = self.database.get_subject(subject_id)
+        if subject is None or not subject.active:
+            raise FilingError(_("Escolhe uma disciplina ativa."))
+        if kind not in FILE_KINDS:
+            raise FilingError(_("Escolhe um tipo de documento válido."))
+        if document.subject_id == subject_id and document.kind == kind:
+            return document
+        folder = self.config.university_root / subject.folder_name / kind
+        destination, collided = self._plan_contained_destination(
+            folder, document.current_path.name, self.config.university_root
+        )
+        if not document.current_path.is_file():
+            raise FilingError(
+                _("Não foi possível encontrar {name}.").format(name=document.current_path.name)
+            )
+        try:
+            pending = self.database.begin_document_move(file_id, subject_id, kind, destination)
+        except Exception as exc:
+            raise FilingError(_("Não foi possível preparar o histórico do movimento.")) from exc
+        try:
+            move_without_overwrite(document.current_path, destination)
+        except IncompleteMoveError as exc:
+            raise FilingError(
+                _(
+                    "O movimento ficou incompleto. O original e a cópia foram mantidos; "
+                    "revê ambos antes de continuar."
+                )
+            ) from exc
+        except OSError as exc:
+            with suppress(Exception):
+                self.database.cancel_document_move(pending.id)
+            raise FilingError(
+                _(
+                    "O ficheiro ainda está a ser usado por outra aplicação. "
+                    "Fecha-o e tenta novamente."
+                )
+            ) from exc
+        try:
+            moved = self.database.complete_document_move(
+                pending.id, destination, subject_id=subject_id, kind=kind
+            )
+        except Exception as exc:
+            rollback = unique_path(document.current_path.parent, document.current_path.name)
+            rolled_back = False
+            try:
+                move_without_overwrite(destination, rollback)
+            except OSError:
+                LOGGER.exception("Failed to roll back a document move")
+            else:
+                with suppress(Exception):
+                    self.database.cancel_document_move(pending.id, new_path=rollback)
+                rolled_back = True
+            message = (
+                _("O movimento foi revertido porque não foi possível atualizar o histórico.")
+                if rolled_back
+                else _(
+                    "Não foi possível atualizar o histórico. Revê os ficheiros antes de repetir."
+                )
+            )
+            raise FilingError(message) from exc
+        self._register_collision(collided)
+        return moved
+
     def return_to_origin(self, inbox_id: int) -> Path:
         """Return non-university material to the folder it came from, safely."""
 
@@ -444,7 +513,9 @@ class FilingService:
         event = self.database.latest_undoable_filing()
         if event is None:
             return None
-        if not event.destination_path.is_file():
+        document = self.database.get_file(event.file_id) if event.file_id is not None else None
+        source_path = document.current_path if document is not None else event.destination_path
+        if not source_path.is_file():
             raise FilingError(
                 _(
                     "O último ficheiro organizado já não está no destino. "
@@ -456,11 +527,11 @@ class FilingService:
             self.config.inbox_dir, event.source_path.name, self.config.inbox_dir
         )
         try:
-            pending = self.database.begin_filing_undo(event, restored_path)
+            pending = self.database.begin_filing_undo(event, restored_path, source_path=source_path)
         except Exception as exc:
             raise FilingError(_("Não foi possível preparar o histórico para desfazer.")) from exc
         try:
-            move_without_overwrite(event.destination_path, restored_path)
+            move_without_overwrite(source_path, restored_path)
         except IncompleteMoveError as exc:
             raise FilingError(
                 _(
@@ -488,6 +559,7 @@ class FilingService:
                 event,
                 restored_path,
                 version_event=version_event if version_reverted else None,
+                source_path=source_path,
             )
         except Exception as exc:
             if version_reverted and version_event is not None:
@@ -495,7 +567,7 @@ class FilingService:
                     move_without_overwrite(
                         version_event.source_path, version_event.destination_path
                     )
-            rollback = unique_path(event.destination_path.parent, event.destination_path.name)
+            rollback = unique_path(source_path.parent, source_path.name)
             try:
                 move_without_overwrite(restored_path, rollback)
             except OSError:
@@ -507,7 +579,7 @@ class FilingService:
                         redirected = self.database.redirect_filing_destination(
                             event.id,
                             event.file_id,
-                            event.destination_path,
+                            source_path,
                             rollback,
                             pending.id,
                         )
@@ -517,7 +589,7 @@ class FilingService:
                     LOGGER.error(
                         "The rolled-back undo left the catalog pointing at %s while the "
                         "document is at %s",
-                        event.destination_path,
+                        source_path,
                         rollback,
                     )
                     try:
