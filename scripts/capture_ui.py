@@ -13,12 +13,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "windows" if os.name == "nt" else "offs
 from PySide6.QtWidgets import QApplication
 
 from organizador.classifier import guess_filing
-from organizador.config import AppConfig
+from organizador.config import DEFAULT_THEME, AppConfig
 from organizador.db import Database
 from organizador.filer import FilingService
 from organizador.ui.main_window import MainWindow
 from organizador.ui.prompt import FilingPrompt
-from organizador.ui.theme import apply_theme
+from organizador.ui.theme import apply_theme, get_theme
 
 
 def populate(config: AppConfig, database: Database, filer: FilingService) -> int:
@@ -87,7 +87,7 @@ def main() -> int:
     args.temp_dir.mkdir(parents=True, exist_ok=True)
 
     application = QApplication([])
-    apply_theme(application)
+    apply_theme(application, get_theme(DEFAULT_THEME))
     with tempfile.TemporaryDirectory(prefix="organizador-review-", dir=args.temp_dir) as raw:
         root = Path(raw)
         config = AppConfig(
