@@ -158,6 +158,25 @@ def test_find_duplicate_refreshes_a_legacy_cache_without_a_fingerprint(
     assert stored.hash_fingerprint
 
 
+def test_find_duplicate_matches_a_size_changed_edit(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    original = b"curto"
+    edited = b"conteudo bem maior depois da edicao"
+    document = _filed_document(database, subject, tmp_path, "aula.txt", original)
+    document.current_path.write_bytes(edited)
+    _touch(document.current_path)
+
+    item_id = _inbox_item(database, subject, tmp_path, "copia.txt", edited)
+    item = database.get_inbox_item(item_id)
+    assert item is not None
+
+    match = find_duplicate(database, item)
+
+    assert match is not None
+    assert match.id == document.id
+
+
 def test_find_duplicate_ignores_same_size_different_content(
     database: Database, subject: Subject, tmp_path: Path
 ) -> None:

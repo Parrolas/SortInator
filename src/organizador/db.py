@@ -1651,20 +1651,6 @@ class Database:
             ).fetchall()
         return [self._file(row) for row in rows]
 
-    def list_active_documents_by_size(self, size: int) -> list[FiledDocument]:
-        """List active catalog documents that share a byte size."""
-
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM files
-                WHERE catalog_state = 'active' AND size = ?
-                ORDER BY filed_at DESC, id DESC
-                """,
-                (size,),
-            ).fetchall()
-        return [self._file(row) for row in rows]
-
     def list_adopted_files(self) -> list[FiledDocument]:
         """List files cataloged in place so the user can unregister them."""
 
@@ -2438,8 +2424,12 @@ class Database:
         expected_record_token: str | None = None,
         size: int | None = None,
         mtime_ns: int | None = None,
-    ) -> None:
-        """Replace all indexed pages for a document."""
+    ) -> bool:
+        """Replace all indexed pages for a document.
+
+        Returns whether the write was applied; a guard mismatch means the
+        document changed on disk and must be indexed again from a fresh read.
+        """
 
         assignment = "indexed_at = ?, index_state = '', index_error = ''"
         values: list[object] = [_now()]
@@ -2461,7 +2451,7 @@ class Database:
                     tuple(values),
                 )
                 if updated.rowcount != 1:
-                    return
+                    return False
             else:
                 values.append(file_id)
                 connection.execute(
@@ -2484,6 +2474,7 @@ class Database:
                 ],
             )
             connection.commit()
+        return True
 
     def mark_document_indexed(
         self,

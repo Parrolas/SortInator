@@ -71,6 +71,14 @@ jobs:
           .\.venv\Scripts\python.exe scripts\run_installer_e2e.py --disposable-account --installer "dist\releases\Organizador-$Version-Setup.exe" --zip "dist\releases\Organizador-$Version-windows-x64.zip"
           if ($LASTEXITCODE -ne 0) { throw "Installer lifecycle validation failed" }
 
+      - name: Legacy update end-to-end gate (candidate bytes)
+        shell: pwsh
+        run: |
+          $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
+          .\scripts\run_update_release_e2e.ps1 -CandidateZip "dist\releases\Organizador-$Version-windows-x64.zip" -CandidateVersion $Version
+        # Runs against the exact candidate bytes before anything is published,
+        # so a legacy-updater incompatibility never reaches the public release.
+
       - name: Publish prerelease assets
         shell: pwsh
         env:
@@ -107,11 +115,13 @@ jobs:
           $SetupSidecar = ((Get-Content -LiteralPath "e2e-public\$SetupName.sha256" -Raw).Trim() -split '\s+')[0]
           if ($LocalSetupHash -ne $PublicSetupHash -or $PublicSetupHash -ne $SetupSidecar) { throw "Public installer checksum mismatch" }
 
-      - name: Legacy update end-to-end gate
+      - name: Legacy update end-to-end gate (public bytes)
         shell: pwsh
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
           .\scripts\run_update_release_e2e.ps1 -CandidateZip "e2e-public\Organizador-$Version-windows-x64.zip" -CandidateVersion $Version
+        # Re-verifies the bytes a user actually downloads; the candidate bytes
+        # were already validated before publication.
         # On failure the prerelease stays unpublished to /releases/latest (manual
         # bridge policy): old installations are never offered an unsafe update.
 

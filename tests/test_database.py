@@ -1131,6 +1131,40 @@ def test_cancel_document_move_can_repoint_a_rolled_back_path(
     assert database.list_pending_moves() == []
 
 
+def test_replace_document_pages_reports_a_stale_path_guard(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+
+    stale = database.replace_document_pages(
+        file_id,
+        subject.name,
+        document.current_path.name,
+        ["conteudo indexado"],
+        expected_path=tmp_path / "outro.txt",
+    )
+
+    assert stale is False
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.indexed_at is None
+
+    written = database.replace_document_pages(
+        file_id,
+        subject.name,
+        document.current_path.name,
+        ["conteudo indexado"],
+        expected_path=document.current_path,
+    )
+
+    assert written is True
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.indexed_at is not None
+
+
 def test_version_rename_lifecycle_updates_the_catalog(
     database: Database, subject: Subject, tmp_path: Path
 ) -> None:

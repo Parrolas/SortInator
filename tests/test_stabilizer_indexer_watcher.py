@@ -676,6 +676,39 @@ def test_reindex_reports_when_the_queue_is_full(
         indexer.shutdown()
 
 
+def test_moving_a_queued_document_requeues_indexing_on_the_new_path(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    source = tmp_path / "antes.txt"
+    source.write_text("conteudo movido para indexar", encoding="utf-8")
+    file_id = _file_record(database, subject, source)
+    stale = database.get_file(file_id)
+    assert stale is not None
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    destination = tmp_path / "depois.txt"
+    pending = database.begin_document_move(file_id, other.id, "Outros", destination)
+    source.replace(destination)
+    database.complete_document_move(pending.id, destination, subject_id=other.id, kind="Outros")
+
+    indexer = DocumentIndexer(database)
+    try:
+        indexer._attempted.add((file_id, stale.record_token))
+
+        indexer.index_document(stale)
+
+        assert (file_id, stale.record_token) not in indexer._attempted
+        indexer.submit_pending()
+        deadline = monotonic() + 10.0
+        while not database.search("movido") and monotonic() < deadline:
+            sleep(0.01)
+        assert database.search("movido")
+        stored = database.get_file(file_id)
+        assert stored is not None
+        assert stored.indexed_at is not None
+    finally:
+        indexer.shutdown()
+
+
 def test_index_refill_keeps_a_fixed_outstanding_work_cap(
     database: Database,
     subject: Subject,

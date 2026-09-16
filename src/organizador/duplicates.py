@@ -38,6 +38,15 @@ def file_fingerprint(path: Path) -> str:
     return f"{details.st_size}:{details.st_mtime_ns}"
 
 
+def fingerprint_size(value: str) -> int | None:
+    """Return the byte size recorded in a fingerprint, when valid."""
+
+    size, separator, _modified = value.partition(":")
+    if not separator or not size.isdigit():
+        return None
+    return int(size)
+
+
 def _hash_is_fresh(content_sha256: str, stored: str, current: str) -> bool:
     """Return whether a cached hash still matches the file's stat fingerprint."""
 
@@ -47,23 +56,32 @@ def _hash_is_fresh(content_sha256: str, stored: str, current: str) -> bool:
 def find_duplicate(database: Database, item: InboxItem) -> FiledDocument | None:
     """Return the newest active document with the same content, if any.
 
-    Catalog and inbox hashes are cached but revalidated against the file's size
-    and modification time, so documents edited after filing are re-hashed
-    instead of matching their outdated cached fingerprint.
+    Candidates are filtered by their *current* on-disk size — stored sizes lag
+    behind edits — and cached hashes are revalidated against the file's size
+    and modification time, so edited documents are re-hashed instead of
+    matching an outdated fingerprint.
     """
 
+    item_fingerprint = file_fingerprint(item.path)
+    item_size = fingerprint_size(item_fingerprint)
+    if item_size is None:
+        return None
     fingerprint = item.content_sha256
-    if not _hash_is_fresh(fingerprint, item.hash_fingerprint, file_fingerprint(item.path)):
+    if not _hash_is_fresh(fingerprint, item.hash_fingerprint, item_fingerprint):
         fingerprint = file_sha256(item.path)
         if not fingerprint:
             return None
         database.set_inbox_hash(item.id, fingerprint, file_fingerprint(item.path))
-    for document in database.list_active_documents_by_size(item.size):
-        if _hash_is_fresh(
-            document.content_sha256,
-            document.hash_fingerprint,
-            file_fingerprint(document.current_path),
-        ):
+    candidates = sorted(
+        database.list_files(),
+        key=lambda document: (document.filed_at, document.id),
+        reverse=True,
+    )
+    for document in candidates:
+        current = file_fingerprint(document.current_path)
+        if fingerprint_size(current) != item_size:
+            continue
+        if _hash_is_fresh(document.content_sha256, document.hash_fingerprint, current):
             candidate_hash = document.content_sha256
         else:
             candidate_hash = file_sha256(document.current_path)

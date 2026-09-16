@@ -127,6 +127,11 @@ class DocumentIndexer:
             return
         path = document.current_path
         if ExistingDownload.capture(path) is None:
+            current = self.database.get_file(document.id)
+            if current is not None and ExistingDownload.capture(current.current_path) is not None:
+                LOGGER.info("Requeuing index because the document moved: %s", path)
+                self._attempted.discard((document.id, document.record_token))
+                return
             LOGGER.warning("Deferring index because the document is missing or unsafe: %s", path)
             return
         try:
@@ -194,7 +199,7 @@ class DocumentIndexer:
         if not any(page.strip() for page in capped):
             # Documents without extractable text stay findable by their final name.
             capped = [final_name]
-        self.database.replace_document_pages(
+        written = self.database.replace_document_pages(
             document.id,
             subject_name,
             final_name,
@@ -204,6 +209,10 @@ class DocumentIndexer:
             size=current_size,
             mtime_ns=current_mtime_ns,
         )
+        if not written:
+            LOGGER.info("Requeuing index because the document changed while extracting: %s", path)
+            self._attempted.discard((document.id, document.record_token))
+            return
         if extract_error is not None:
             self._mark_failed(
                 document,

@@ -13,6 +13,7 @@ EN_STRINGS: dict[str, str] = {
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "The notification expired or a file is no longer available. Browse your files in the app.",
     "A terminar o Organizador": "Closing Organizador",
     "A concluir {count} operações de ficheiros antes de sair…": "Finishing {count} file operations before closing…",
+    "A concluir a cópia de segurança antes de sair…": ("Finishing the backup before closing…"),
     "Espera que as operações de ficheiros terminem antes de guardar.": "Wait for file operations to finish before saving.",
     "Atualização em espera": "Update waiting",
     "Espera que as operações de ficheiros terminem antes de atualizar.": "Wait for file operations to finish before updating.",
@@ -902,6 +903,9 @@ ES_STRINGS: dict[str, str] = {
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notificación ha caducado o algún archivo ya no está disponible. Consulta tus archivos en la app.",
     "A terminar o Organizador": "Cerrando Organizador",
     "A concluir {count} operações de ficheiros antes de sair…": "Terminando {count} operaciones de archivos antes de salir…",
+    "A concluir a cópia de segurança antes de sair…": (
+        "Terminando la copia de seguridad antes de salir…"
+    ),
     "Espera que as operações de ficheiros terminem antes de guardar.": "Espera a que terminen las operaciones de archivos antes de guardar.",
     "Atualização em espera": "Actualización en espera",
     "Espera que as operações de ficheiros terminem antes de atualizar.": "Espera a que terminen las operaciones de archivos antes de actualizar.",
@@ -1832,6 +1836,7 @@ FR_STRINGS: dict[str, str] = {
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notification a expiré ou un fichier n'est plus disponible. Consultez vos fichiers dans l'application.",
     "A terminar o Organizador": "Fermeture d'Organizador",
     "A concluir {count} operações de ficheiros antes de sair…": "Fin de {count} opérations de fichiers avant la fermeture…",
+    "A concluir a cópia de segurança antes de sair…": ("Fin de la sauvegarde avant la fermeture…"),
     "Espera que as operações de ficheiros terminem antes de guardar.": "Attendez la fin des opérations de fichiers avant d'enregistrer.",
     "Atualização em espera": "Mise à jour en attente",
     "Espera que as operações de ficheiros terminem antes de atualizar.": "Attendez la fin des opérations de fichiers avant la mise à jour.",

@@ -2,6 +2,23 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.16.2 - 2026-09-16
+
+### Fixed
+
+- Moving a document that is still queued for indexing no longer strands it:
+  the indexer requeues from the document's current path when the recorded path
+  disappears, and a guarded write rejected because the file moved during
+  extraction is retried by the refill pass.
+- Duplicate detection compares the current on-disk size instead of stale
+  stored metadata, so edits that change a document's size are still found.
+- Duplicate hashing runs on a background thread, so large files no longer
+  freeze the interface while the prompt opens.
+- Exiting the app waits for a running backup (create, import or export) to
+  finish, and an update install refuses to start while one is running.
+- The release workflow validates the legacy updater against the candidate
+  bytes before publishing, in addition to the public-byte re-check.
+
 ## 0.16.1 - 2026-09-16
 
 ### Fixed

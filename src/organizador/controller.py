@@ -201,6 +201,7 @@ class AppController(QObject):
     update_check_finished = Signal(object, bool, int)
     update_install_finished = Signal(object)
     backup_finished = Signal(object)
+    duplicate_found = Signal(int, object)
     windows_integration_ready = Signal(bool)
 
     def __init__(self, config: AppConfig, database: Database | None = None) -> None:
@@ -269,6 +270,7 @@ class AppController(QObject):
         self._deferred_download_keys: set[str] = set()
         self._backup_dialog: BackupListDialog | None = None
         self._subject_files_dialog: SubjectFilesDialog | None = None
+        self._backup_jobs = 0
 
         self._intake_notice_names: list[str] = []
         self._intake_notice_timer = QTimer(self)
@@ -454,18 +456,23 @@ class AppController(QObject):
     def _poll_shutdown(self) -> None:
         if self._shutdown_complete:
             return
-        if self._pending_transfers:
+        if self._pending_transfers or self._backup_jobs:
             if self._shutdown_progress is None:
                 self._shutdown_progress = QProgressDialog(self.main_window)
                 self._shutdown_progress.setWindowTitle(_("A terminar o Organizador"))
                 self._shutdown_progress.setCancelButton(None)
                 self._shutdown_progress.setRange(0, 0)
                 self._shutdown_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-            self._shutdown_progress.setLabelText(
-                _("A concluir {count} operações de ficheiros antes de sair…").format(
-                    count=self._pending_transfers
+            if self._pending_transfers:
+                self._shutdown_progress.setLabelText(
+                    _("A concluir {count} operações de ficheiros antes de sair…").format(
+                        count=self._pending_transfers
+                    )
                 )
-            )
+            else:
+                self._shutdown_progress.setLabelText(
+                    _("A concluir a cópia de segurança antes de sair…")
+                )
             self._shutdown_progress.show()
             QTimer.singleShot(50, self._poll_shutdown)
             return
@@ -502,6 +509,7 @@ class AppController(QObject):
         self.update_check_finished.connect(self._on_update_check_finished)
         self.update_install_finished.connect(self._on_update_install_finished)
         self.backup_finished.connect(self._finish_backup)
+        self.duplicate_found.connect(self._on_duplicate_found)
         self.main_window.hidden_to_tray.connect(self._hidden_to_tray)
         self.main_window.quit_requested.connect(self.shutdown)
 
@@ -1249,9 +1257,29 @@ class AppController(QObject):
                 subjects,
                 guess,
                 name_template=self.config.filename_template,
-                duplicate=duplicates.find_duplicate(self.database, candidate),
             )
+            self._lookup_duplicate(candidate)
             return
+
+    def _lookup_duplicate(self, item: InboxItem) -> None:
+        """Find a duplicate off the GUI thread; hashing large files can block."""
+
+        def work() -> None:
+            try:
+                duplicate = duplicates.find_duplicate(self.database, item)
+            except Exception:
+                LOGGER.warning("Duplicate lookup failed for item %s", item.id, exc_info=True)
+                duplicate = None
+            self.duplicate_found.emit(item.id, duplicate)
+
+        threading.Thread(target=work, name="duplicate-lookup", daemon=True).start()
+
+    def _on_duplicate_found(self, inbox_id: int, duplicate: object) -> None:
+        if self._shutting_down or self.prompt.current_item_id != inbox_id:
+            return
+        if duplicate is not None and not isinstance(duplicate, FiledDocument):
+            return
+        self.prompt.set_duplicate(duplicate)
 
     def _file_item(
         self,
@@ -1849,6 +1877,12 @@ class AppController(QObject):
         self.config.quiet_intake = previous.quiet_intake
         self.config.initialized = previous.initialized
 
+    def _submit_backup(self, name: str, work: Callable[[], None]) -> None:
+        """Run one backup job while keeping shutdown waiting for its result."""
+
+        self._backup_jobs += 1
+        threading.Thread(target=work, name=name, daemon=True).start()
+
     def create_user_backup(self, export_dir: Path | None = None) -> None:
         """Create a user snapshot, optionally exporting a portable archive."""
 
@@ -1876,7 +1910,7 @@ class AppController(QObject):
                 outcome = _BackupOutcome(kind="create", result=archive or bundle.path, error=None)
             self.backup_finished.emit(outcome)
 
-        threading.Thread(target=work, name="user-backup", daemon=True).start()
+        self._submit_backup("user-backup", work)
 
     def export_new_backup(self) -> None:
         """Create a snapshot and export it to a folder the user picks."""
@@ -1936,7 +1970,7 @@ class AppController(QObject):
                 outcome = _BackupOutcome(kind="import", result=zip_path, error=None)
             self.backup_finished.emit(outcome)
 
-        threading.Thread(target=work, name="backup-import", daemon=True).start()
+        self._submit_backup("backup-import", work)
 
     def _export_backup(self, bundle: BundleInfo) -> None:
         suggested = f"Organizador-backup-{bundle.created_at:%Y-%m-%d}.zip"
@@ -1964,7 +1998,7 @@ class AppController(QObject):
                 outcome = _BackupOutcome(kind="export", result=archive, error=None)
             self.backup_finished.emit(outcome)
 
-        threading.Thread(target=work, name="backup-export", daemon=True).start()
+        self._submit_backup("backup-export", work)
 
     def _delete_backup(self, bundle: BundleInfo, dialog: BackupListDialog) -> None:
         answer = QMessageBox.question(
@@ -2057,6 +2091,7 @@ class AppController(QObject):
         self.shutdown()
 
     def _finish_backup(self, outcome: object) -> None:
+        self._backup_jobs = max(0, self._backup_jobs - 1)
         if not isinstance(outcome, _BackupOutcome):
             LOGGER.error("Ignoring malformed backup outcome")
             return
@@ -2282,7 +2317,12 @@ class AppController(QObject):
         )
 
     def _install_pending_update(self) -> None:
-        if self._pending_transfers or self._manual_import_active or self._shutting_down:
+        if (
+            self._pending_transfers
+            or self._backup_jobs
+            or self._manual_import_active
+            or self._shutting_down
+        ):
             self.tray.notify(
                 _("Atualização em espera"),
                 _("Espera que as operações de ficheiros terminem antes de atualizar."),

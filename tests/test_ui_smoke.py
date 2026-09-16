@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtGui import QCursor, QFont, QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +40,7 @@ from organizador.recovery import (
     RESTORE_REQUEST_NAME,
     USER_MARKER,
     BundleInfo,
+    RecoveryCoordinator,
 )
 from organizador.ui.dialogs import (
     BackupListDialog,
@@ -704,9 +705,55 @@ def test_prompt_flow_detects_an_existing_copy(
         qt_app.processEvents()
 
         assert controller.prompt.current_item_id == item.id
+        _pump_until(qt_app, lambda: controller.prompt.duplicate_banner.isVisible())
+
         assert controller.prompt._duplicate is not None
         assert controller.prompt._duplicate.current_path == old_path
-        assert controller.prompt.duplicate_banner.isVisible()
+    finally:
+        controller.prompt.timer.stop()
+        controller.prompt.hide()
+        _close_controller(qt_app, controller)
+
+
+def test_duplicate_lookup_runs_off_the_main_thread(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    folder.mkdir(parents=True, exist_ok=True)
+    old_path = folder / "Aula.pdf"
+    old_path.write_bytes(b"conteudo repetido para o teste")
+    candidate = ExistingDownload.capture(old_path)
+    assert candidate is not None
+    database.adopt_subject_file(candidate, subject.id, "Slides")
+    inbox_path = app_config.inbox_dir / "Aula.pdf"
+    inbox_path.write_bytes(b"conteudo repetido para o teste")
+    item = database.add_inbox_item(
+        inbox_path,
+        app_config.downloads_dir / inbox_path.name,
+        inbox_path.name,
+        inbox_path.stat().st_size,
+    )
+
+    threads: list[str] = []
+    real_hash = duplicates.file_sha256
+
+    def recording_hash(path: Path) -> str:
+        threads.append(threading.current_thread().name)
+        return real_hash(path)
+
+    monkeypatch.setattr(duplicates, "file_sha256", recording_hash)
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        controller.prompt_queue.append(item.id)
+        controller._show_next_prompt()
+        _pump_until(qt_app, lambda: controller.prompt.duplicate_banner.isVisible())
+
+        assert threads
+        assert all(name != threading.main_thread().name for name in threads)
     finally:
         controller.prompt.timer.stop()
         controller.prompt.hide()
@@ -2703,6 +2750,47 @@ def test_restore_relaunch_keeps_a_custom_data_directory(
         assert len(commands) == 1
         assert "--data-dir" not in commands[0][-1]
     finally:
+        _close_controller(qt_app, controller)
+
+
+def test_quit_waits_for_a_running_backup(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    started, release = threading.Event(), threading.Event()
+    real_snapshot = RecoveryCoordinator.create_snapshot
+
+    def slow_snapshot(self: RecoveryCoordinator, marker: str = USER_MARKER) -> object:
+        started.set()
+        assert release.wait(10)
+        return real_snapshot(self, marker)
+
+    monkeypatch.setattr(RecoveryCoordinator, "create_snapshot", slow_snapshot)
+    quit_calls: list[bool] = []
+    monkeypatch.setattr(QApplication, "quit", lambda: quit_calls.append(True))
+    try:
+        controller.create_user_backup()
+        assert started.wait(5)
+        assert controller._backup_jobs == 1
+
+        controller.shutdown()
+        ticks: list[bool] = []
+        QTimer.singleShot(0, lambda: ticks.append(True))
+        _pump_until(qt_app, lambda: bool(ticks))
+
+        assert not quit_calls
+        assert controller._shutdown_progress is not None
+        assert "cópia de segurança" in controller._shutdown_progress.labelText()
+
+        release.set()
+        _pump_until(qt_app, lambda: bool(quit_calls))
+
+        assert quit_calls == [True]
+        assert controller._backup_jobs == 0
+    finally:
+        release.set()
         _close_controller(qt_app, controller)
 
 

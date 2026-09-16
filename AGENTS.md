@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_update_release_e2e.ps1 `
 1. Bump `__version__` in `src/organizador/__init__.py` + CHANGELOG entry.
 2. Gates → `build.ps1` → installer build → update E2E (use an ASCII `-SandboxRoot` locally).
 3. Commit, `git tag -a vX.Y.Z` (tag MUST equal `__version__`; CI enforces), push both.
-4. `release.yml` builds with `-OutputRoot dist`, compiles and gates the Setup.exe on a disposable CI account, publishes the **prerelease** (zip + sha256 + Setup + sha256), re-downloads the public assets, and re-runs the legacy zip E2E (v0.6.1 baseline) against them.
+4. `release.yml` builds with `-OutputRoot dist`, compiles and gates the Setup.exe on a disposable CI account, runs the legacy zip E2E against the candidate bytes **before** publishing, publishes the **prerelease** (zip + sha256 + Setup + sha256), then re-downloads the public assets and re-runs the legacy zip E2E (v0.6.1 baseline) against them.
 5. Move the daily install deliberately: run the published `Setup.exe` (per-user, `%LOCALAPPDATA%\Programs\Organizador`) or update the portable `dist\Organizador` from the published zip; verify the `.sha256` first.
 
 - Tag force-move (`git tag -f` + `--force` push) is only safe **before** the release is published — published assets are immutable (CI throws if the release exists).

@@ -285,6 +285,14 @@ class FilingPrompt(QWidget):
         self.activateWindow()
         self.name_edit.setFocus()
 
+    def set_duplicate(self, duplicate: FiledDocument | None) -> None:
+        """Attach a duplicate found after the prompt was already shown."""
+
+        if self.current_item_id is None:
+            return
+        self._duplicate = duplicate
+        self._update_duplicate_banner()
+
     def show_error(self, message: str) -> None:
         """Keep the prompt open and explain a recoverable failure."""
 
