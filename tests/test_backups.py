@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import organizador.recovery as recovery_module
-from organizador.db import Database, DatabaseHealth, DatabaseHealthError
+from organizador.db import Database, DatabaseHealth, DatabaseHealthError, NewerDatabaseError
 from organizador.recovery import (
     DATABASE_BACKUP_NAME,
     MANIFEST_NAME,
@@ -277,6 +278,232 @@ def test_restore_rolls_back_when_verification_fails_after_the_swap(
     assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
+
+
+def test_restore_failure_while_saving_settings_deletes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    original_replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self == data_dir / "settings.json":
+            raise PermissionError("bloqueado")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+    coordinator.request_restore(bundle.path)
+
+    with pytest.raises(PermissionError):
+        coordinator.consume_restore_request()
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert (data_dir / "settings.json").read_bytes() == current_settings
+    assert (data_dir / RESTORE_REQUEST_FAILED_NAME).is_file()
+    assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
+
+
+def test_restore_failure_while_saving_a_sidecar_restores_the_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    sidecar = data_dir / "organizador.db-wal"
+    sidecar.write_bytes(b"sidecar")
+    original_replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self == sidecar:
+            raise PermissionError("bloqueado")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+    coordinator.request_restore(bundle.path)
+
+    with pytest.raises(PermissionError):
+        coordinator.consume_restore_request()
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert (data_dir / "settings.json").read_bytes() == current_settings
+    assert sidecar.read_bytes() == b"sidecar"
+    assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
+
+
+def test_failed_rollback_keeps_the_saved_original_for_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    sidecar = data_dir / "organizador.db-wal"
+    sidecar.write_bytes(b"sidecar")
+    original_replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self == sidecar:
+            raise PermissionError("bloqueado")
+        if (
+            self.name.startswith(".settings.json.replaced-")
+            and target == data_dir / "settings.json"
+        ):
+            raise PermissionError("bloqueado outra vez")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+    coordinator.request_restore(bundle.path)
+
+    with pytest.raises(PermissionError):
+        coordinator.consume_restore_request()
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    saved = [
+        path
+        for path in data_dir.iterdir()
+        if path.name.startswith(".settings.json.replaced-") and path.name.endswith(".tmp")
+    ]
+    assert len(saved) == 1
+    assert saved[0].read_bytes() == current_settings
+
+
+def test_restore_is_refused_when_the_safety_snapshot_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    (data_dir / "settings.json").write_text(
+        '{"language": "pt", "marker": "atual"}', encoding="utf-8"
+    )
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_settings = (data_dir / "settings.json").read_bytes()
+    coordinator.request_restore(bundle.path)
+
+    def failing_snapshot(marker: str = "") -> object:
+        raise PermissionError("sem espaço para a cópia de segurança")
+
+    monkeypatch.setattr(coordinator, "create_snapshot", failing_snapshot)
+
+    with pytest.raises(PermissionError):
+        coordinator.consume_restore_request()
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert (data_dir / "settings.json").read_bytes() == current_settings
+    assert not any(
+        path.name.startswith("pre_restore-") for path in coordinator.backups_dir.iterdir()
+    )
+    assert (data_dir / RESTORE_REQUEST_FAILED_NAME).is_file()
+
+
+def test_restore_skips_the_snapshot_when_the_current_database_is_unusable(
+    tmp_path: Path,
+) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    coordinator.request_restore(bundle.path)
+    with database.connect() as connection:
+        connection.execute(
+            "INSERT INTO subjects(name, code, color, keywords_json, folder_name, created_at)"
+            " VALUES ('Extra', 'EXT', '#123456', '[]', 'EXT - Extra', '2026-01-01')"
+        )
+        connection.commit()
+    (data_dir / "organizador.db").write_bytes(b"nao e uma base de dados")
+
+    outcome = coordinator.consume_restore_request()
+
+    assert outcome is not None
+    assert _subject_count(data_dir / "organizador.db") == 1
+    assert not any(
+        path.name.startswith("pre_restore-") for path in coordinator.backups_dir.iterdir()
+    )
+
+
+def _rewrite_bundle_manifest(
+    bundle_path: Path,
+    *,
+    database_sha256: str | None = None,
+    user_version: int | None = None,
+) -> None:
+    manifest_path = bundle_path / MANIFEST_NAME
+    payload = json.loads(manifest_path.read_bytes())
+    if database_sha256 is not None:
+        payload["files"]["database"]["sha256"] = database_sha256
+    if user_version is not None:
+        payload["schema"]["user_version"] = user_version
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+
+
+def test_backup_with_a_newer_schema_is_rejected_before_the_swap(tmp_path: Path) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    with sqlite3.connect(bundle.path / DATABASE_BACKUP_NAME) as connection:
+        connection.execute("PRAGMA user_version = 7")
+        connection.commit()
+    _rewrite_bundle_manifest(
+        bundle.path,
+        database_sha256=recovery_module._sha256_file(bundle.path / DATABASE_BACKUP_NAME),
+        user_version=7,
+    )
+
+    with pytest.raises(NewerDatabaseError):
+        coordinator.restore_bundle(bundle.path)
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
+
+
+def test_backup_with_a_manifest_version_mismatch_is_rejected(tmp_path: Path) -> None:
+    data_dir, database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    with database.connect() as connection:
+        connection.execute("DELETE FROM subjects")
+        connection.commit()
+    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    _rewrite_bundle_manifest(bundle.path, user_version=5)
+
+    with pytest.raises(RecoveryError):
+        coordinator.restore_bundle(bundle.path)
+
+    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
 
 
 def test_restore_request_roundtrip_creates_pre_restore_snapshot(tmp_path: Path) -> None:

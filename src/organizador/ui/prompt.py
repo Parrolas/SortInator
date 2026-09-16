@@ -213,12 +213,16 @@ class FilingPrompt(QWidget):
         self.error_label.clear()
         self._custom_name = False
         self._duplicate = duplicate
+        self.replace_check.setChecked(False)
         self._prompt_subjects = list(subjects)
         self._prompt_template = name_template
         self._prompt_original_name = item.original_name
         self._prompt_when = item.detected_at
+        origin_folder = item.original_path.parent.name or "Downloads"
         self.meta_label.setText(
-            _("{size}  ·  recebido da pasta Downloads").format(size=format_size(item.size))
+            _("{size}  ·  recebido da pasta {folder}").format(
+                size=format_size(item.size), folder=origin_folder
+            )
         )
         self.guess_label.setText(
             _("Sugestão {percent}%").format(percent=guess.confidence)

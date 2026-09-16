@@ -171,6 +171,7 @@ def test_refresh_launch_at_login_keeps_a_disabled_entry_off(
 def test_refresh_windows_integration_refreshes_both_surfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
     calls: list[str] = []
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: calls.append("run") or True)
     monkeypatch.setattr(
@@ -320,6 +321,7 @@ def test_unregister_removes_only_our_explorer_verbs(
 def test_refresh_windows_integration_registers_the_explorer_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: True)
     monkeypatch.setattr(startup, "ensure_start_menu_shortcut", lambda *args, **kwargs: True)

@@ -290,6 +290,58 @@ def test_prepared_undo_is_completed_after_a_crash_between_move_and_commit(
     assert database.activity_summary().operations_recovered == 1
 
 
+def test_interrupted_replacement_undo_restores_the_previous_version_path(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+) -> None:
+    first_source = app_config.downloads_dir / "aula.pdf"
+    first_source.write_bytes(b"versao antiga " * 20)
+    first_item = filer.ingest(first_source)
+    assert first_item is not None
+    old = filer.file_document(first_item.id, subject.id, "Slides", "Aula.pdf")
+
+    second_source = app_config.downloads_dir / "aula-copia.pdf"
+    second_source.write_bytes(b"versao nova " * 20)
+    second_item = filer.ingest(second_source)
+    assert second_item is not None
+    new_document = filer.file_document(
+        second_item.id, subject.id, "Slides", "Aula.pdf", replace_document_id=old.id
+    )
+    event = database.latest_undoable_filing()
+    assert event is not None
+    version_event = database.linked_version_event(event)
+    assert version_event is not None
+    assert version_event.source_path.is_file()
+    restored_path = app_config.inbox_dir / "Aula.pdf"
+
+    pending = database.begin_filing_undo(
+        event, restored_path, source_path=new_document.current_path
+    )
+    new_document.current_path.replace(restored_path)
+    version_event.destination_path.replace(version_event.source_path)
+
+    report = scan(app_config, database)
+    outcome = apply(database, report)
+
+    assert outcome.completed_undo_event_ids == (pending.id,)
+    assert database.get_file(new_document.id) is None
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == version_event.source_path
+    assert stored_old.current_path.is_file()
+    assert database.list_pending_undos() == []
+    with database.connect() as connection:
+        undone_at = connection.execute(
+            "SELECT undone_at FROM events WHERE id = ?", (version_event.id,)
+        ).fetchone()[0]
+    assert undone_at is not None
+    remaining = scan(app_config, database)
+    assert remaining.missing_documents == ()
+    assert remaining.pending_undo_events == ()
+
+
 def test_prepared_undo_is_cancelled_when_the_move_never_started(
     app_config: AppConfig,
     database: Database,

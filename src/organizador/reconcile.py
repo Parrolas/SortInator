@@ -405,8 +405,16 @@ def apply(database: Database, report: ReconciliationReport) -> ReconciliationOut
         source = _probe(pending.source_path)
         restored = _probe(pending.destination_path)
         document = database.get_file(pending.file_id) if pending.file_id is not None else None
+        version_event = database.active_version_for_filing(pending.related_event_id)
+        version_reverted = (
+            version_event is not None
+            and isinstance(source, ExistingDownload)
+            and not version_event.destination_path.exists()
+            and normalise_path_key(version_event.source_path)
+            == normalise_path_key(pending.source_path)
+        )
         if (
-            source is _ProbeState.MISSING
+            (source is _ProbeState.MISSING or version_reverted)
             and isinstance(restored, ExistingDownload)
             and document is not None
             and restored.size == document.size
@@ -415,6 +423,7 @@ def apply(database: Database, report: ReconciliationReport) -> ReconciliationOut
             if item is not None:
                 recovered_items.append(item)
                 completed_undo_event_ids.append(pending.id)
+                database.finish_version_undo(pending.related_event_id)
         elif isinstance(source, ExistingDownload) and restored is _ProbeState.MISSING:
             if database.cancel_pending_undo(pending.id):
                 cancelled_undo_event_ids.append(pending.id)

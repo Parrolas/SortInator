@@ -2,6 +2,24 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.16.1 - 2026-09-16
+
+### Fixed
+
+- A failed restore can no longer delete the live catalogue or settings: the
+  rollback now removes only what it installed and restores only what it
+  saved, and a failed safety snapshot aborts the restore instead of
+  continuing without protection.
+- Backups from a newer schema, or whose schema disagrees with their manifest,
+  are refused before anything is replaced.
+- An interrupted "substituir a versão anterior" undo now recovers the
+  previous version's catalogue path at startup.
+- The restart that applies a restore keeps a custom data directory.
+- Editing a general task no longer assigns it to a subject, the filing prompt
+  no longer carries the replacement checkbox to the next document, the popup
+  shows the real origin folder of Explorer imports, and the subject file list
+  updates its counts after a move.
+
 ## 0.16.0 - 2026-09-15
 
 ### Added

@@ -167,6 +167,7 @@ class TaskDialog(QDialog):
         form.addRow(_("Tarefa"), self.title_edit)
 
         self.subject_combo = QComboBox()
+        self.subject_combo.addItem(_("Geral"), None)
         for subject in subjects:
             name = (
                 subject.name
@@ -174,9 +175,12 @@ class TaskDialog(QDialog):
                 else _("{name} (arquivada)").format(name=subject.name)
             )
             self.subject_combo.addItem(name, subject.id)
-        current = self.subject_combo.findData(task.subject_id)
-        if current >= 0:
-            self.subject_combo.setCurrentIndex(current)
+        if task.subject_id is None:
+            self.subject_combo.setCurrentIndex(0)
+        else:
+            current = self.subject_combo.findData(task.subject_id)
+            if current >= 0:
+                self.subject_combo.setCurrentIndex(current)
         form.addRow(_("Disciplina"), self.subject_combo)
 
         self.due_check = QCheckBox(_("Prazo"))
@@ -684,25 +688,10 @@ class SubjectFilesDialog(QDialog):
         root.setSpacing(12)
         title = subject.name + (f"  ·  {subject.code}" if subject.code else "")
         root.addWidget(label(title, "PageTitle"))
-        count = len(self.documents)
-        total_bytes = sum(document.size for document in self.documents)
-        root.addWidget(
-            label(
-                _("{count} ficheiro · {size}").format(count=count, size=format_size(total_bytes))
-                if count == 1
-                else _("{count} ficheiros · {size}").format(
-                    count=count, size=format_size(total_bytes)
-                ),
-                "PageSubtitle",
-            )
-        )
-        kind_parts = [
-            f"{kind} {sum(1 for document in self.documents if document.kind == kind)}"
-            for kind in FILE_KINDS
-            if any(document.kind == kind for document in self.documents)
-        ]
-        if kind_parts:
-            root.addWidget(label(" · ".join(kind_parts), "Muted"))
+        self.summary_label = label("", "PageSubtitle")
+        root.addWidget(self.summary_label)
+        self.kinds_label = label("", "Muted")
+        root.addWidget(self.kinds_label)
 
         self.area = QScrollArea()
         self.area.setWidgetResizable(True)
@@ -736,6 +725,7 @@ class SubjectFilesDialog(QDialog):
         self.pending_labels.clear()
         self.reindex_buttons.clear()
         self.move_buttons.clear()
+        self._update_summary()
         position = self.area.verticalScrollBar().value()
         clear_layout(self.list_layout)
         if not self.documents:
@@ -749,6 +739,24 @@ class SubjectFilesDialog(QDialog):
             self.list_layout.addWidget(self._row(document))
         self.list_layout.addStretch(1)
         self.area.verticalScrollBar().setValue(position)
+
+    def _update_summary(self) -> None:
+        """Refresh file count, total size and per-type counts."""
+
+        count = len(self.documents)
+        total_bytes = sum(document.size for document in self.documents)
+        self.summary_label.setText(
+            _("{count} ficheiro · {size}").format(count=count, size=format_size(total_bytes))
+            if count == 1
+            else _("{count} ficheiros · {size}").format(count=count, size=format_size(total_bytes))
+        )
+        kind_parts = [
+            f"{kind} {sum(1 for document in self.documents if document.kind == kind)}"
+            for kind in FILE_KINDS
+            if any(document.kind == kind for document in self.documents)
+        ]
+        self.kinds_label.setText(" · ".join(kind_parts))
+        self.kinds_label.setVisible(bool(kind_parts))
 
     def mark_reindexing(self, file_id: int) -> None:
         """Show that one document is being extracted again."""

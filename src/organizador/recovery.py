@@ -274,7 +274,7 @@ class RecoveryCoordinator:
             raise RecoveryError("A pending migration backup has conflicting state markers.")
         try:
             validated = self._validate_bundle(bundle_path)
-        except (DatabaseHealthError, OSError, RecoveryError, ValueError) as exc:
+        except (DatabaseHealthError, NewerDatabaseError, OSError, RecoveryError, ValueError) as exc:
             self._transition(bundle_path, PENDING_MARKER, QUARANTINED_MARKER)
             raise RecoveryError(f"The pending recovery bundle is not trustworthy: {exc}") from exc
 
@@ -294,7 +294,7 @@ class RecoveryCoordinator:
             raise RecoveryError("The migration backup is no longer pending.")
         try:
             self._validate_bundle(bundle_path)
-        except (DatabaseHealthError, OSError, RecoveryError, ValueError) as exc:
+        except (DatabaseHealthError, NewerDatabaseError, OSError, RecoveryError, ValueError) as exc:
             self._transition(bundle_path, PENDING_MARKER, QUARANTINED_MARKER)
             raise RecoveryError(f"The migration backup is not trustworthy: {exc}") from exc
 
@@ -539,12 +539,26 @@ class RecoveryCoordinator:
         return decoded
 
     def _snapshot_before_restore(self) -> None:
-        """Protect the current data unless it is already unusable."""
+        """Protect the current data unless it is already unusable.
 
+        A healthy catalogue must never be replaced without its safety
+        snapshot: a snapshot failure aborts the restore, while a missing or
+        corrupt catalogue has nothing worth protecting.
+        """
+
+        if not self._current_data_is_usable():
+            LOGGER.warning("Skipping the pre-restore snapshot: current data is unusable")
+            return
+        self.create_snapshot(PRE_RESTORE_MARKER)
+
+    def _current_data_is_usable(self) -> bool:
+        if not self.database_path.is_file():
+            return False
         try:
-            self.create_snapshot(PRE_RESTORE_MARKER)
+            Database(self.database_path).validate_health().require_healthy()
         except Exception:
-            LOGGER.warning("Could not snapshot the current data before restoring", exc_info=True)
+            return False
+        return True
 
     def _quarantine_restore_request(self, request_path: Path, error: Exception) -> None:
         payload = {"failed_at": _utc_now().isoformat(), "error": str(error)}
@@ -651,7 +665,16 @@ class RecoveryCoordinator:
         database_sidecars = (Path(f"{database_path}-wal"), Path(f"{database_path}-shm"))
         if any(path.exists() or path.is_symlink() for path in database_sidecars):
             raise RecoveryError("The database backup is not standalone.")
-        Database(database_path).validate_health().require_healthy()
+        backup_database = Database(database_path)
+        backup_database.validate_health().require_healthy()
+        inspection = backup_database.inspect_schema()
+        if inspection.user_version is None or inspection.user_version > SCHEMA_VERSION:
+            raise NewerDatabaseError(
+                "A base de dados da cópia pertence a uma versão mais recente "
+                f"({inspection.user_version})."
+            )
+        if inspection.user_version != manifest.user_version:
+            raise RecoveryError("The backup schema version does not match its manifest.")
         return _ValidatedBundle(
             bundle=RecoveryBundle(
                 path=bundle_path,
@@ -691,6 +714,7 @@ class RecoveryCoordinator:
         database_stage = self.data_dir / (f".{self.database_path.name}.restore-{uuid4().hex}.tmp")
         settings_stage = self.data_dir / (f".{self.settings_path.name}.restore-{uuid4().hex}.tmp")
         saved_originals: list[tuple[Path, Path]] = []
+        installed: list[Path] = []
         try:
             _copy_durable(validated.database_path, database_stage)
             if _sha256_file(database_stage) != validated.database_sha256:
@@ -713,8 +737,10 @@ class RecoveryCoordinator:
                     original.replace(saved)
                     saved_originals.append((original, saved))
                 database_stage.replace(self.database_path)
+                installed.append(self.database_path)
                 if validated.bundle.settings_present:
                     settings_stage.replace(self.settings_path)
+                    installed.append(self.settings_path)
 
                 if _sha256_file(self.database_path) != validated.database_sha256:
                     raise RecoveryError("The restored database hash does not match its manifest.")
@@ -727,15 +753,7 @@ class RecoveryCoordinator:
                 elif self.settings_path.exists() or self.settings_path.is_symlink():
                     raise RecoveryError("Settings should be absent after recovery.")
             except BaseException:
-                for installed in (
-                    self.database_path,
-                    self.settings_path,
-                    *self._database_sidecars(),
-                ):
-                    installed.unlink(missing_ok=True)
-                for original, saved in reversed(saved_originals):
-                    if saved.exists() or saved.is_symlink():
-                        saved.replace(original)
+                self._rollback_restore(saved_originals, installed)
                 raise
             for _, saved in saved_originals:
                 with suppress(OSError):
@@ -743,6 +761,43 @@ class RecoveryCoordinator:
         finally:
             database_stage.unlink(missing_ok=True)
             settings_stage.unlink(missing_ok=True)
+
+    @staticmethod
+    def _rollback_restore(
+        saved_originals: list[tuple[Path, Path]],
+        installed: list[Path],
+    ) -> None:
+        """Remove exactly what was installed and put back exactly what was saved.
+
+        Paths that were neither saved nor installed are never touched, so a
+        failure while saving an original can no longer delete live data.
+        """
+
+        saved_paths = {original for original, _saved in saved_originals}
+        for path in installed:
+            if path in saved_paths:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                LOGGER.error(
+                    "Could not remove an installed file during a restore rollback: %s",
+                    path,
+                    exc_info=True,
+                )
+        for original, saved in reversed(saved_originals):
+            try:
+                if original.exists() or original.is_symlink():
+                    original.unlink(missing_ok=True)
+                if saved.exists() or saved.is_symlink():
+                    saved.replace(original)
+            except OSError:
+                LOGGER.critical(
+                    "Could not put back %s during a restore rollback; the saved copy is kept at %s",
+                    original,
+                    saved,
+                    exc_info=True,
+                )
 
     def _database_sidecars(self) -> tuple[Path, Path]:
         return (Path(f"{self.database_path}-wal"), Path(f"{self.database_path}-shm"))

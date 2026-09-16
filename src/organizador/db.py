@@ -2154,6 +2154,72 @@ class Database:
             ).fetchone()
         return self._event(row) if row is not None else None
 
+    def active_version_for_filing(self, filing_event_id: int | None) -> HistoryEvent | None:
+        """Return the still-active version rename linked to a filing event id."""
+
+        if filing_event_id is None:
+            return None
+        with self.connect() as connection:
+            filing = connection.execute(
+                "SELECT related_event_id FROM events WHERE id = ? AND action = 'file'",
+                (filing_event_id,),
+            ).fetchone()
+            if filing is None or filing["related_event_id"] is None:
+                return None
+            row = connection.execute(
+                """
+                SELECT * FROM events
+                WHERE id = ? AND action = 'version' AND undone_at IS NULL
+                """,
+                (int(filing["related_event_id"]),),
+            ).fetchone()
+        return self._event(row) if row is not None else None
+
+    def finish_version_undo(self, filing_event_id: int | None) -> int | None:
+        """Point a restored previous version back at its original path.
+
+        Called after an interrupted replacement undo was completed: when the
+        previous version's file already sits at its original name, the catalog
+        must follow it instead of staying on the versioned path.
+        """
+
+        if filing_event_id is None:
+            return None
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            filing = connection.execute(
+                "SELECT related_event_id FROM events WHERE id = ? AND action = 'file'",
+                (filing_event_id,),
+            ).fetchone()
+            if filing is None or filing["related_event_id"] is None:
+                return None
+            version_row = connection.execute(
+                """
+                SELECT * FROM events
+                WHERE id = ? AND action = 'version' AND undone_at IS NULL
+                """,
+                (int(filing["related_event_id"]),),
+            ).fetchone()
+            if version_row is None:
+                return None
+            event = self._event(version_row)
+            if event.file_id is None:
+                return None
+            if not event.source_path.is_file() or event.destination_path.exists():
+                return None
+            updated = connection.execute(
+                """
+                UPDATE files SET current_path = ?
+                WHERE id = ? AND current_path = ? AND catalog_state = 'active'
+                """,
+                (str(event.source_path), event.file_id, str(event.destination_path)),
+            )
+            if updated.rowcount != 1:
+                return None
+            connection.execute("UPDATE events SET undone_at = ? WHERE id = ?", (_now(), event.id))
+            connection.commit()
+        return event.file_id
+
     def cancel_pending_undo(self, event_id: int) -> bool:
         """Remove a prepared undo that did not move its source document."""
 

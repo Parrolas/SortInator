@@ -633,7 +633,7 @@ EN_STRINGS: dict[str, str] = {
     ),
     "{name} voltou para {folder}.": "{name} went back to {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} returned to the Inbox.",
-    "{size}  ·  recebido da pasta Downloads": "{size}  ·  received from the Downloads folder",
+    "{size}  ·  recebido da pasta {folder}": "{size}  ·  received from the {folder} folder",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
         "{size}  ·  {when}  ·  Suggestion: {suggestion} / {kind}"
     ),
@@ -1542,7 +1542,7 @@ ES_STRINGS: dict[str, str] = {
     ),
     "{name} voltou para {folder}.": "{name} volvió a {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} volvió a la Bandeja de Entrada.",
-    "{size}  ·  recebido da pasta Downloads": "{size}  ·  recibido de la carpeta Descargas",
+    "{size}  ·  recebido da pasta {folder}": "{size}  ·  recibido de la carpeta {folder}",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
         "{size}  ·  {when}  ·  Sugerencia: {suggestion} / {kind}"
     ),
@@ -2486,7 +2486,7 @@ FR_STRINGS: dict[str, str] = {
     ),
     "{name} voltou para {folder}.": "{name} est retourné dans {folder}.",
     "{name} voltou à Caixa de Entrada.": "{name} est revenu dans la Boîte de réception.",
-    "{size}  ·  recebido da pasta Downloads": "{size}  ·  reçu du dossier Téléchargements",
+    "{size}  ·  recebido da pasta {folder}": "{size}  ·  reçu du dossier {folder}",
     "{size}  ·  {when}  ·  Sugestão: {suggestion} / {kind}": (
         "{size}  ·  {when}  ·  Suggestion : {suggestion} / {kind}"
     ),

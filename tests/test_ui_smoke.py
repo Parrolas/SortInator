@@ -1560,6 +1560,134 @@ def test_inbox_rows_without_recovery_are_selectable_and_pruned(
     window.close()
 
 
+def test_task_dialog_keeps_general_tasks_unassigned(
+    qt_app: QApplication, database: Database, subject: Subject
+) -> None:
+    del qt_app
+    general = database.add_task("Tarefa geral", None, None)
+    assigned = database.add_task("Com disciplina", subject.id, None)
+
+    general_dialog = TaskDialog(general, [subject])
+    try:
+        assert general_dialog.subject_combo.currentData() is None
+        assert general_dialog.values[1] is None
+    finally:
+        general_dialog.deleteLater()
+
+    assigned_dialog = TaskDialog(assigned, [subject])
+    try:
+        assert assigned_dialog.subject_combo.currentData() == subject.id
+        index = assigned_dialog.subject_combo.findData(None)
+        assert index >= 0
+        assigned_dialog.subject_combo.setCurrentIndex(index)
+        assert assigned_dialog.values[1] is None
+    finally:
+        assigned_dialog.deleteLater()
+
+
+def test_filing_prompt_resets_replacement_consent_between_items(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+) -> None:
+    first_path = app_config.inbox_dir / "primeiro.pdf"
+    first_path.write_bytes(b"conteudo do primeiro ficheiro")
+    first = database.add_inbox_item(
+        first_path,
+        app_config.downloads_dir / first_path.name,
+        first_path.name,
+        first_path.stat().st_size,
+    )
+    second_path = app_config.inbox_dir / "segundo.pdf"
+    second_path.write_bytes(b"conteudo do segundo ficheiro")
+    second = database.add_inbox_item(
+        second_path,
+        app_config.downloads_dir / second_path.name,
+        second_path.name,
+        second_path.stat().st_size,
+    )
+    folder = app_config.university_root / subject.folder_name / "Outros"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "primeiro.pdf").write_bytes(b"conteudo do primeiro ficheiro")
+    candidate = ExistingDownload.capture(folder / "primeiro.pdf")
+    assert candidate is not None
+    stored = database.adopt_subject_file(candidate, subject.id, "Outros")
+    duplicate = database.get_file(stored.id)
+    assert duplicate is not None
+
+    prompt = FilingPrompt(timeout_seconds=30)
+    try:
+        guess = guess_filing(first.original_name, [subject])
+        prompt.show_item(first, [subject], guess, duplicate=duplicate)
+        prompt._choose_subject(subject.id, prompt.subject_group.button(subject.id))
+        prompt.type_buttons["Outros"].click()
+        prompt.replace_check.setChecked(True)
+        assert prompt.replace_check.isChecked()
+
+        prompt.show_item(second, [subject], guess, duplicate=duplicate)
+
+        assert not prompt.replace_check.isChecked()
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
+def test_filing_prompt_shows_the_recorded_origin_folder(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "Area de Trabalho"
+    origin.mkdir()
+    source = origin / "apontamento.pdf"
+    source.write_bytes(b"conteudo externo " * 4)
+    candidate = ExistingDownload.capture(source)
+    assert candidate is not None
+    item = database.add_inbox_item(source, source, source.name, source.stat().st_size)
+
+    prompt = FilingPrompt(timeout_seconds=30)
+    try:
+        guess = guess_filing(item.original_name, [subject])
+        prompt.show_item(item, [subject], guess)
+
+        assert "Area de Trabalho" in prompt.meta_label.text()
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
+def test_subject_files_summary_updates_with_the_document_list(
+    qt_app: QApplication,
+) -> None:
+    del qt_app
+    subject = Subject(1, "Cálculo I", "MAT101", "#087A74", (), "MAT101 - Cálculo I", True)
+    document = FiledDocument(
+        id=7,
+        subject_id=1,
+        kind="Slides",
+        original_name="aula.pdf",
+        current_path=Path("C:/uni/MAT101 - Cálculo I/Slides/Aula.pdf"),
+        original_path=Path("C:/Downloads/aula.pdf"),
+        size=2048,
+        filed_at=datetime(2026, 9, 15, 12, tzinfo=UTC),
+        indexed_at=None,
+    )
+    dialog = SubjectFilesDialog(subject, [document], Path("C:/uni/MAT101 - Cálculo I"))
+    try:
+        assert "1 ficheiro" in dialog.summary_label.text()
+        assert "Slides 1" in dialog.kinds_label.text()
+
+        dialog.set_documents([])
+
+        assert "0 ficheiros" in dialog.summary_label.text()
+        assert dialog.kinds_label.isHidden()
+    finally:
+        dialog.deleteLater()
+
+
 def test_filing_prompt_prefills_from_the_name_template(
     qt_app: QApplication,
     app_config: AppConfig,
@@ -2540,6 +2668,40 @@ def test_controller_moves_a_document_through_the_worker(
         assert stored is not None
         assert stored.subject_id == other.id
         assert stored.kind == "Trabalhos"
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_restore_relaunch_keeps_a_custom_data_directory(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    from organizador import updater
+
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        commands: list[list[str]] = []
+        monkeypatch.setattr(updater, "is_frozen", lambda: True)
+        monkeypatch.setattr(subprocess, "Popen", lambda args, **kwargs: commands.append(list(args)))
+        monkeypatch.setattr(controller, "shutdown", lambda: None)
+
+        controller._relaunch_for_restore()
+
+        assert len(commands) == 1
+        command = commands[0][-1]
+        assert "--data-dir" in command
+        assert str(app_config.data_dir.resolve()) in command
+        assert f'"{app_config.data_dir.resolve()}"' in command
+
+        commands.clear()
+        monkeypatch.setattr("organizador.controller.default_data_dir", lambda: app_config.data_dir)
+        controller._relaunch_for_restore()
+
+        assert len(commands) == 1
+        assert "--data-dir" not in commands[0][-1]
     finally:
         _close_controller(qt_app, controller)
 

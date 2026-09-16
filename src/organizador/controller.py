@@ -2029,9 +2029,19 @@ class AppController(QObject):
             self.shutdown()
             return
         executable = Path(sys.executable)
+        arguments = ""
+        data_dir = self.config.data_dir.resolve()
+        if data_dir != default_data_dir().resolve():
+            quoted_directory = str(data_dir).replace("'", "''")
+            arguments = f" -ArgumentList '--data-dir', '\"{quoted_directory}\"'"
         command = (
-            "Wait-Process -Id {pid} -ErrorAction SilentlyContinue; Start-Process -FilePath '{exe}'"
-        ).format(pid=os.getpid(), exe=str(executable).replace("'", "''"))
+            "Wait-Process -Id {pid} -ErrorAction SilentlyContinue; "
+            "Start-Process -FilePath '{exe}'{arguments}"
+        ).format(
+            pid=os.getpid(),
+            exe=str(executable).replace("'", "''"),
+            arguments=arguments,
+        )
         try:
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
