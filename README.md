@@ -1,20 +1,23 @@
 # Organizador
 
-For the new Windows Setup installer and clickable filing notifications, see
-[Windows installation](docs/windows-installation.md).
-
 Aplicação local para Windows 11 que vigia Downloads, pede a classificação dos
 ficheiros académicos e mantém uma biblioteca pesquisável por disciplina,
 tópico e tipo de conteúdo, com cópias de segurança do catálogo.
 
+**Índice:** [Vídeo](#vídeo) · [Funcionalidades](#funcionalidades) ·
+[Proteção dos ficheiros](#proteção-dos-ficheiros) · [Instalação no
+Windows](#instalação-no-windows) · [Área de
+notificação](#área-de-notificação) · [Cópias de
+segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidade) ·
+[Atualização e reversão](#atualização-e-reversão) ·
+[Desinstalação](#desinstalação) · [Limitações atuais](#limitações-atuais) ·
+[Contribuir](#contribuir) · [Licenças](#licenças)
+
 ## Vídeo
 
-Vídeo de apresentação — o teu semestre, arrumado. 22 segundos.
-[<img width="960" height="540" alt="brag-teaser" src="https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5" />](
-https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
+[![Vídeo de apresentação do Organizador](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
 
-
-
+*Vídeo de apresentação — 22 segundos. Clica para ver com música.*
 
 ## Funcionalidades
 
@@ -93,6 +96,11 @@ ficheiros de cada vez.
 As cópias de segurança e as reposições abrangem apenas o catálogo e as
 definições. Nem as atualizações nem as restaurações tocam na pasta Universidade
 nem em Downloads.
+
+Ao sair, as operações de ficheiros já aceites terminam antes de fechar a app.
+Enquanto estiverem em curso, guardar definições ou instalar uma atualização
+fica bloqueado com uma explicação. Cópias interrompidas durante a recolha
+ficam para revisão manual na Caixa de Entrada.
 
 ## Instalação no Windows
 
@@ -191,7 +199,7 @@ aplicação nunca usa a base de dados como cópia dos documentos.
 
 A app verifica automaticamente se existe uma versão nova no arranque (podes
 desativar isto nas Definições). Quando existe, aparece "Instalar atualização"
-no menu do tabuleiro; um clique transfere, verifica o SHA-256 publicado e a
+no menu do ícone; um clique transfere, verifica o SHA-256 publicado e a
 versão do pacote, prepara a atualização numa área isolada e só depois reinicia
 para aplicar. Um assistente dedicado espera que a app antiga termine, troca as
 pastas com verificação de cada passo e só confirma quando a nova versão arranca
@@ -275,87 +283,12 @@ documentos nela guardados.
   básicos, mas não fluxos de dados alternativos (ADS), ACLs, encriptação nem
   dispersão; estes casos ficam registados no diagnóstico.
 
-## Desenvolvimento
+## Contribuir
 
-Requisitos: Windows 11 e Python 3.11 ou superior. Os builds oficiais usam
-Python 3.13.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
-.\.venv\Scripts\python.exe -m organizador.main
-```
-
-Validação individual (a mesma ordem que o CI):
-
-```powershell
-.\.venv\Scripts\python.exe -m ruff check src tests scripts
-.\.venv\Scripts\python.exe -m ruff format --check src tests scripts
-.\.venv\Scripts\python.exe -m mypy src\organizador
-.\.venv\Scripts\python.exe -m pytest
-```
-
-## Build local
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
-```
-
-O script executa lint, verificação de formato, mypy, testes, PyInstaller e um
-arranque de diagnóstico do pacote. Depois adiciona as licenças e produz:
-
-- `artifacts\Organizador\Organizador.exe`
-- `artifacts\releases\Organizador-<versão>-windows-x64.zip`
-- `artifacts\releases\Organizador-<versão>-windows-x64.zip.sha256`
-
-Para o instalador, o primeiro comando descarrega uma vez um compilador Inno
-Setup fixo e verificado (edição não comercial):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_installer.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
-```
-
-que acrescenta:
-
-- `artifacts\releases\Organizador-<versão>-Setup.exe`
-- `artifacts\releases\Organizador-<versão>-Setup.exe.sha256`
-
-O build local não substitui uma cópia já instalada nem altera os ícones
-guardados no código. Usa `-OutputRoot <pasta>` para escolher outra pasta de
-saída.
-
-Ao sair, as operações de ficheiros já aceites terminam antes de fechar a app.
-Enquanto estiverem em curso, guardar definições ou instalar uma atualização
-fica bloqueado com uma explicação. Cópias interrompidas durante a recolha
-ficam para revisão manual na Caixa de Entrada.
-
-O [roteiro de uma semana de uso](docs/daily-use-checklist.md) ajuda a registar
+As instruções de desenvolvimento, build e publicação estão em
+[CONTRIBUTING.md](CONTRIBUTING.md). O
+[roteiro de uma semana de uso](docs/daily-use-checklist.md) ajuda a registar
 problemas concretos antes de escolher a próxima melhoria.
-
-As dependências exatas da versão são fixadas em `constraints-release.txt`.
-`pyproject.toml` é a fonte única das dependências diretas. `defusedxml` é mantido
-explicitamente porque o `openpyxl` o ativa para proteger a leitura de folhas de
-cálculo XML não confiáveis.
-
-## Publicação
-
-Tags no formato `vMAJOR.MINOR.PATCH` ativam o workflow de release; a tag tem de
-coincidir com `organizador.__version__`. O workflow recria o ambiente a partir
-de `constraints-release.txt`, executa toda a validação, constrói o ZIP e o
-Setup e compila e testa o instalador numa conta Windows descartável antes de
-publicar quatro ficheiros com SHA-256: o ZIP, o Setup e os respetivos
-`.sha256`.
-
-Antes de publicar, o workflow executa a atualização real com o código exato da
-versão anterior (`scripts\run_update_release_e2e.ps1`) contra os bytes do
-candidato, incluindo uma verificação de cópia de segurança e reposição com o
-executável final. Depois de publicar, volta a descarregar os ficheiros
-públicos, confirma os hashes e repete a atualização real a partir da versão
-base antiga.
-
-A release é criada como prerelease e só é promovida a estável manualmente,
-depois de confirmada a transição a partir da base instalada. Uma release já
-publicada nunca é substituída por uma repetição do workflow.
 
 ## Licenças
 

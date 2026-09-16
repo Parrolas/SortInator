@@ -17,3 +17,4 @@ update-e2e-evidence-*.log
 .idea/
 .vscode/
 .impeccable/review/
+brag-output*/
