@@ -7,6 +7,15 @@ Aplicação local para Windows 11 que vigia Downloads, pede a classificação do
 ficheiros académicos e mantém uma biblioteca pesquisável por disciplina,
 tópico e tipo de conteúdo, com cópias de segurança do catálogo.
 
+## Vídeo
+
+Vídeo de apresentação — o teu semestre, arrumado. 22 segundos.
+[<img width="960" height="540" alt="brag-teaser" src="https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5" />](
+https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
+
+
+
+
 ## Funcionalidades
 
 **Vigilância e recolha**
