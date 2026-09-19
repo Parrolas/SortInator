@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TypedDict, cast
 
 from PySide6.QtCore import QDate, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QTextCharFormat
+from PySide6.QtGui import QColor, QFont, QResizeEvent, QTextCharFormat
 from PySide6.QtWidgets import (
     QCalendarWidget,
     QCheckBox,
@@ -49,10 +49,13 @@ from organizador.ui.widgets import (
     EmptyState,
     PageHeading,
     PathActionRow,
+    ToggleSwitch,
+    WheelRedirector,
     button,
     clear_layout,
     format_day,
     format_size,
+    hairline,
     label,
 )
 
@@ -940,25 +943,29 @@ class TasksPage(QWidget):
 
         body = QHBoxLayout()
         body.setSpacing(14)
-        calendar_panel = QFrame()
-        calendar_panel.setObjectName("Panel")
-        calendar_layout = QVBoxLayout(calendar_panel)
-        calendar_layout.setContentsMargins(12, 10, 12, 12)
+        self.calendar_panel = QFrame()
+        self.calendar_panel.setObjectName("Panel")
+        self.calendar_panel.setFixedWidth(300)
+        calendar_layout = QVBoxLayout(self.calendar_panel)
+        calendar_layout.setContentsMargins(10, 8, 10, 10)
         self.calendar = QCalendarWidget()
         self.calendar.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
-        self.calendar.setMinimumWidth(360)
-        self.calendar.setMaximumWidth(440)
+        self.calendar.setMinimumWidth(260)
         self.calendar.clicked.connect(self._on_date_clicked)
         self.calendar.activated.connect(self._on_date_activated)
         calendar_layout.addWidget(self.calendar)
-        body.addWidget(calendar_panel)
 
         right = QVBoxLayout()
         right.setSpacing(8)
         self.filter_row = QHBoxLayout()
+        self.calendar_toggle = button(_("Calendário"))
+        self.calendar_toggle.setCheckable(True)
+        self.calendar_toggle.setVisible(False)
+        self.calendar_toggle.toggled.connect(self._on_calendar_toggled)
         self.filter_label = label("", "Muted")
         self.clear_filter_button = button(_("Ver todas"), variant="quiet")
         self.clear_filter_button.clicked.connect(self._clear_date_filter)
+        self.filter_row.addWidget(self.calendar_toggle)
         self.filter_row.addWidget(self.filter_label)
         self.filter_row.addStretch(1)
         self.filter_row.addWidget(self.clear_filter_button)
@@ -966,8 +973,33 @@ class TasksPage(QWidget):
         area, _container, self.tasks_layout = _scroll_list()
         right.addWidget(area, 1)
         body.addLayout(right, 1)
+        body.addWidget(self.calendar_panel, 0, Qt.AlignmentFlag.AlignTop)
+        self.calendar_panel.setMaximumHeight(340)
         layout.addLayout(body, 1)
+        self._narrow = False
+        self._apply_calendar_layout(self.window().width())
         self.refresh()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._apply_calendar_layout(self.window().width())
+
+    def _apply_calendar_layout(self, width: int) -> None:
+        """Collapse the calendar behind a toggle when the page gets narrow."""
+
+        narrow = width < 1120
+        if narrow == self._narrow:
+            return
+        self._narrow = narrow
+        self.calendar_toggle.setVisible(narrow)
+        if narrow:
+            self.calendar_panel.setVisible(self.calendar_toggle.isChecked())
+        else:
+            self.calendar_panel.setVisible(True)
+
+    def _on_calendar_toggled(self, checked: bool) -> None:
+        if self._narrow:
+            self.calendar_panel.setVisible(checked)
 
     def refresh(self) -> None:
         """Refresh subject choices and the task list."""
@@ -1025,6 +1057,10 @@ class TasksPage(QWidget):
         """Colour calendar days by the state of their deadlines."""
 
         self.calendar.setDateTextFormat(QDate(), QTextCharFormat())
+        neutral = QTextCharFormat()
+        neutral.setForeground(QColor(ui_theme.current().text))
+        for weekend in (Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday):
+            self.calendar.setWeekdayTextFormat(weekend, neutral)
         by_date: dict[date, list[StudyTask]] = {}
         for task in tasks:
             if task.due_date is not None:
@@ -1331,16 +1367,28 @@ class SettingsPage(QWidget):
             )
         )
 
-        panel = QFrame()
-        panel.setObjectName("Panel")
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(22, 24, 22, 26)
-        panel_layout.setSpacing(22)
-        panel_layout.addWidget(label(_("Pastas e vigilância"), "SectionTitle"))
-        form = QFormLayout()
-        form.setVerticalSpacing(24)
-        form.setHorizontalSpacing(26)
-        form.setContentsMargins(0, 6, 0, 0)
+        body_area, _container, body_layout = _scroll_list()
+        body_layout.setSpacing(22)
+
+        def section(title: str) -> tuple[QVBoxLayout, QFormLayout]:
+            if body_layout.count():
+                body_layout.addWidget(hairline())
+            content = QWidget()
+            section_layout = QVBoxLayout(content)
+            section_layout.setContentsMargins(0, 0, 0, 0)
+            section_layout.setSpacing(12)
+            section_layout.addWidget(label(title, "SectionTitle"))
+            fields = QFormLayout()
+            fields.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+            fields.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+            fields.setVerticalSpacing(20)
+            fields.setHorizontalSpacing(26)
+            fields.setContentsMargins(0, 6, 0, 0)
+            section_layout.addLayout(fields)
+            body_layout.addWidget(content)
+            return section_layout, fields
+
+        folders_layout, form = section(_("Pastas e ficheiros"))
 
         self.root_edit = QLineEdit()
         root_row = QHBoxLayout()
@@ -1373,7 +1421,29 @@ class SettingsPage(QWidget):
         self.minimum_size.setRange(0, 100 * 1024 * 1024)
         self.minimum_size.setSuffix(_(" bytes"))
         form.addRow(_("Tamanho mínimo"), self.minimum_size)
-        self.auto_close_check = QCheckBox(_("Fechar o popup automaticamente"))
+        self.ocr_check = ToggleSwitch(_("Reconhecer texto em PDFs digitalizados (OCR)"))
+        folders_layout.addWidget(self.ocr_check)
+        note = label(
+            _(
+                "Alterar a pasta Universidade afeta os próximos ficheiros; "
+                "os já organizados não são movidos automaticamente."
+            ),
+            "Muted",
+        )
+        note.setWordWrap(True)
+        folders_layout.addWidget(note)
+
+        watch_layout, form = section(_("Vigilância e notificações"))
+        self.watch_check = ToggleSwitch(_("Vigiar novos ficheiros em Downloads"))
+        self.startup_check = ToggleSwitch(_("Iniciar o Organizador quando entro no Windows"))
+        self.quiet_check = ToggleSwitch(_("Silenciar notificações de arquivo"))
+        self.quiet_check.setToolTip(
+            _("Sem avisos de ficheiros organizados; erros e prazos continuam visíveis.")
+        )
+        form.addRow(self.watch_check)
+        form.addRow(self.startup_check)
+        form.addRow(self.quiet_check)
+        self.auto_close_check = ToggleSwitch(_("Fechar o popup automaticamente"))
         self.auto_close_check.setToolTip(
             _("Sem esta opção, o popup fica aberto até escolheres uma ação.")
         )
@@ -1388,6 +1458,8 @@ class SettingsPage(QWidget):
         self.reminder_spin.setSuffix(_(" dias"))
         self.reminder_spin.setToolTip(_("Com quantos dias de antecedência avisar prazos"))
         form.addRow(_("Avisar prazos antes"), self.reminder_spin)
+
+        _appearance_layout, form = section(_("Aparência e idioma"))
         self.theme_combo = QComboBox()
         for theme_id in THEME_IDS:
             self.theme_combo.addItem(ui_theme.get_theme(theme_id).display_name, theme_id)
@@ -1399,41 +1471,10 @@ class SettingsPage(QWidget):
         language_note = label(_("O idioma novo é aplicado ao reiniciar a app."), "Muted")
         language_note.setContentsMargins(0, 8, 0, 0)
         form.addRow("", language_note)
-        panel_layout.addLayout(form)
+        self.check_updates_check = ToggleSwitch(_("Procurar atualizações automaticamente"))
+        watch_layout.addWidget(self.check_updates_check)
 
-        self.watch_check = QCheckBox(_("Vigiar novos ficheiros em Downloads"))
-        self.startup_check = QCheckBox(_("Iniciar o Organizador quando entro no Windows"))
-        self.check_updates_check = QCheckBox(_("Procurar atualizações automaticamente"))
-        self.ocr_check = QCheckBox(_("Reconhecer texto em PDFs digitalizados (OCR)"))
-        self.quiet_check = QCheckBox(_("Silenciar notificações de arquivo"))
-        self.quiet_check.setToolTip(
-            _("Sem avisos de ficheiros organizados; erros e prazos continuam visíveis.")
-        )
-        panel_layout.addWidget(self.watch_check)
-        panel_layout.addWidget(self.startup_check)
-        panel_layout.addWidget(self.check_updates_check)
-        panel_layout.addWidget(self.ocr_check)
-        panel_layout.addWidget(self.quiet_check)
-        note = label(
-            _(
-                "Alterar a pasta Universidade afeta os próximos ficheiros; "
-                "os já organizados não são movidos automaticamente."
-            ),
-            "Muted",
-        )
-        note.setWordWrap(True)
-        panel_layout.addWidget(note)
-
-        body_area, _container, body_layout = _scroll_list()
-        body_layout.setSpacing(18)
-        body_layout.addWidget(panel)
-
-        backup_panel = QFrame()
-        backup_panel.setObjectName("Panel")
-        backup_layout = QVBoxLayout(backup_panel)
-        backup_layout.setContentsMargins(22, 24, 22, 26)
-        backup_layout.setSpacing(14)
-        backup_layout.addWidget(label(_("Cópias de segurança"), "SectionTitle"))
+        backup_layout, _backup_form = section(_("Cópias de segurança"))
         self.backup_status = label(_("Ainda não há cópias de segurança."), "Muted")
         self.backup_status.setWordWrap(True)
         backup_layout.addWidget(self.backup_status)
@@ -1470,8 +1511,22 @@ class SettingsPage(QWidget):
         )
         backup_note.setWordWrap(True)
         backup_layout.addWidget(backup_note)
-        body_layout.addWidget(backup_panel)
+        body_layout.addStretch(1)
+        self.body_area = body_area
         layout.addWidget(body_area, 1)
+        layout.addWidget(hairline())
+        # Scrolling must never edit a value: the wheel only edits a spin or
+        # combo that the user explicitly focused; otherwise it scrolls the page.
+        WheelRedirector(
+            self.body_area,
+            (
+                self.minimum_size,
+                self.timeout_spin,
+                self.reminder_spin,
+                self.theme_combo,
+                self.language_combo,
+            ),
+        )
 
         action_row = QHBoxLayout()
         self.status_label = label("", "SuccessText")
@@ -1490,7 +1545,6 @@ class SettingsPage(QWidget):
         )
         version_label.setWordWrap(True)
         layout.addWidget(version_label)
-        layout.addStretch(1)
         self.load_config(config)
 
     def load_config(self, config: AppConfig) -> None:

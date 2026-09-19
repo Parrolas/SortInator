@@ -396,6 +396,12 @@ def current() -> Theme:
     return _active
 
 
+def animation_ms() -> int:
+    """Return the short-motion budget; Contraste keeps every change instant."""
+
+    return 0 if _active.id == "contraste" else 140
+
+
 def build_stylesheet(theme: Theme) -> str:
     """Build the full application stylesheet from one theme's tokens."""
 
@@ -467,6 +473,42 @@ QFrame#IntakeStrip {{
     background: {theme.teal_soft};
     border: 1px solid {theme.intake_border};
     border-radius: 8px;
+}}
+QFrame#Hairline {{
+    background: {theme.border};
+    min-height: 1px;
+    max-height: 1px;
+    border: none;
+}}
+QLineEdit#PaletteInput {{
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 7px;
+    background: {theme.sunken};
+    border: 1px solid {theme.input_border};
+    font-size: 15px;
+}}
+QLineEdit#PaletteInput:focus {{
+    border: 2px solid {theme.teal};
+}}
+QListWidget#PaletteList {{
+    background: transparent;
+    border: none;
+    outline: 0;
+}}
+QListWidget#PaletteList::item {{
+    min-height: 40px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    color: {theme.text};
+}}
+QListWidget#PaletteList::item:hover {{
+    background: {theme.row_hover};
+}}
+QListWidget#PaletteList::item:selected {{
+    background: {theme.row_hover};
+    border-color: {theme.teal};
+    color: {theme.text};
 }}
 QFrame#WarningStrip {{
     background: {theme.warning_soft};

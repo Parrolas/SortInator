@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
 
     hidden_to_tray = Signal()
     quit_requested = Signal()
+    palette_requested = Signal()
 
     def __init__(
         self, database: Database, config: AppConfig, parent: QWidget | None = None
@@ -134,6 +135,9 @@ class MainWindow(QMainWindow):
         self.nav_buttons["inicio"].setChecked(True)
 
         QShortcut(QKeySequence("Ctrl+K"), self).activated.connect(
+            lambda: self.palette_requested.emit()
+        )
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
             lambda: self.show_page("pesquisa")
         )
         for index, key in enumerate(self.pages, start=1):

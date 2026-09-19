@@ -69,15 +69,60 @@ Portuguese diacritics and long file names must be tested at the shipping DPI.
 - **Danger action:** red text and pale border; never the default focus.
 - **Subject/type chip:** selected by filled teal state and keyboard shortcut.
 - **Input:** inset navy surface, one-pixel cool rule, two-pixel teal focus.
+- **Switch:** settings use a painted `ToggleSwitch` (teal fill on state) with
+  the same checkbox contract; Space toggles and changes still require an
+  explicit save.
 - **Empty state:** explains what will appear and the next useful action.
 - **Inbox import:** a heading action opens a count-bearing, default-cancel
   confirmation and disables itself while the capped batch is checked.
 
+## Settings Organization
+
+The Definições page is one scrollable body divided by one-pixel rules into
+four titled groups — *Pastas e ficheiros*, *Vigilância e notificações*,
+*Aparência e idioma* and *Cópias de segurança* — each with its own
+`SectionTitle` and form rows. Boolean settings render as switches inside their
+group; feedback copy stays with the group it belongs to. The save button,
+persistence feedback and version line stay fixed below the scrolling body,
+outside it, so saving is always reachable without scrolling.
+
+## Tasks Calendar
+
+The Tarefas page leads with the task list; a 300px calendar panel sits to its
+right and clamps its height. Below a 1120px window width the calendar folds
+behind a labeled `Calendário` toggle so the task list keeps its space.
+Weekend headers and dates render in the regular text colour (no grey weekend
+tint), while deadline days keep their overdue/today/upcoming/done marks. Click
+a day to filter the list to that date; clicking again or "Ver todas" clears.
+
+## Command Palette
+
+`Ctrl+K` opens a frameless 560px palette card over the main window, bounded to
+the monitor work area. The controller registers every action in a
+`CommandRegistry` each time it opens, so titles reflect the live state (for
+example "Pausar vigilância" becomes "Retomar vigilância" while the watcher is
+paused; the pause entry only exists while watching is running). Registered
+actions: the six pages, notes search, import from Downloads, pause/resume
+watching, undo the last filing, check for updates, open the University folder
+and create a backup now. Row hints show the matching shortcut
+(`Ctrl+1`–`Ctrl+6`, `Ctrl+F`).
+
+Typing runs an accent- and case-folded match (title prefix, then title
+containment, then keywords) on a worker thread with a 150ms debounce; only the
+queued result handler touches the list, and stale answers are discarded.
+Up/Down move the selection, Enter runs the selected command, Escape closes,
+clicking a row runs it. Commands run through the same controller methods the
+rest of the interface uses, so journaling and transfer-queue rules apply.
+The card keeps a bounded 140ms upward entrance, instant in Contraste.
+
 ## States And Motion
 
-Controls include hover, focus, pressed, disabled and error states. The filing
-prompt has the only authored motion: a 190 ms upward ease-out that communicates
-arrival. Content is visible before animation and remains static afterward.
+Controls include hover, focus, pressed, disabled and error states. Motion is
+capped by one shared budget: `theme.animation_ms()` returns 140 ms (the filing
+prompt entrance, the palette entrance, ≤120 ms switch thumb travel) and 0 for
+Contraste, where every state change is instant. Content is visible before any
+animation and remains static afterward; animation only moves position or an
+already-updated state, never reveals or hides information.
 
 Native Windows checkboxes and spin controls preserve familiar state marks.
 Disabled deadline controls change both colour and interaction.
@@ -89,7 +134,8 @@ Downloads.
 
 - Primary workflows are operable with Tab, Enter and Escape.
 - Number keys 1–9 select prompt subjects.
-- `Ctrl+K` opens search; `Ctrl+1` through `Ctrl+6` navigate pages.
+- `Ctrl+K` opens the command palette; `Ctrl+F` focuses search; `Ctrl+1`
+  through `Ctrl+6` navigate pages.
 - Focus uses a visible two-pixel teal boundary.
 - No status depends on colour alone.
 - Errors identify both the failure and recovery action.
@@ -104,6 +150,11 @@ gitignored and are not published with the repository. Regenerate them with:
     --output-dir .impeccable\review `
     --temp-dir $env:TEMP
 ```
+
+Captures include `palette.png` for the command palette card; tests cover the
+settings groups and switches, the calendar fold breakpoint, weekend-neutral
+text, palette matching/debounce and the palette lifecycle through the
+controller.
 
 The shipping application carries one committed raster asset: the supplied
 brand mark (`assets/icon.png`), processed by `scripts/generate_icon.py` into

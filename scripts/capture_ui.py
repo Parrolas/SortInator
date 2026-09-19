@@ -10,13 +10,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "windows" if os.name == "nt" else "offscreen")
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 from organizador.classifier import guess_filing
 from organizador.config import DEFAULT_THEME, AppConfig
 from organizador.db import Database
 from organizador.filer import FilingService
+from organizador.i18n import _
+from organizador.ui.commands import Command, CommandRegistry
 from organizador.ui.main_window import MainWindow
+from organizador.ui.palette import CommandPalette
 from organizador.ui.prompt import FilingPrompt
 from organizador.ui.theme import apply_theme, get_theme
 
@@ -125,6 +129,36 @@ def main() -> int:
         item = database.get_inbox_item(inbox_id)
         if item is None:
             return 1
+        registry = CommandRegistry()
+        for index, (page_key, title) in enumerate(
+            (
+                ("inicio", _("Início")),
+                ("inbox", _("Caixa de Entrada")),
+                ("pesquisa", _("Pesquisa")),
+                ("tarefas", _("Tarefas")),
+                ("disciplinas", _("Disciplinas")),
+                ("definicoes", _("Definições")),
+            ),
+            start=1,
+        ):
+            registry.register(
+                Command(
+                    id=f"page.{page_key}",
+                    title=title,
+                    keywords="ir para página navegar go to page navigate",
+                    shortcut=f"Ctrl+{index}",
+                )
+            )
+        palette = CommandPalette(window)
+        palette.open_with(registry.commands())
+        application.processEvents()
+        application.processEvents()
+        palette.move(window.frameGeometry().center() - QPoint(palette.rect().center()))
+        application.processEvents()
+        if not palette.grab().save(str(args.output_dir / "palette.png")):
+            return 1
+        palette.close()
+        palette.deleteLater()
         subjects = database.list_subjects()
         prompt = FilingPrompt()
         prompt.show_item(item, subjects, guess_filing(item.original_name, subjects))

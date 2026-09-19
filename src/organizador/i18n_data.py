@@ -9,6 +9,12 @@ runtime, and the parity tests keep the three languages aligned.
 from __future__ import annotations
 
 EN_STRINGS: dict[str, str] = {
+    "Pastas e ficheiros": "Folders and files",
+    "Vigilância e notificações": "Watching and notifications",
+    "Aparência e idioma": "Appearance and language",
+    "Calendário": "Calendar",
+    "Escreve um comando…": "Type a command…",
+    "Sem correspondências": "No matching commands",
     "Notificação indisponível": "Notification unavailable",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "The notification expired or a file is no longer available. Browse your files in the app.",
     "A terminar o Organizador": "Closing Organizador",
@@ -899,6 +905,12 @@ EN_STRINGS: dict[str, str] = {
 }
 
 ES_STRINGS: dict[str, str] = {
+    "Pastas e ficheiros": "Carpetas y archivos",
+    "Vigilância e notificações": "Vigilancia y notificaciones",
+    "Aparência e idioma": "Apariencia e idioma",
+    "Calendário": "Calendario",
+    "Escreve um comando…": "Escribe un comando…",
+    "Sem correspondências": "Sin coincidencias",
     "Notificação indisponível": "Notificación no disponible",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notificación ha caducado o algún archivo ya no está disponible. Consulta tus archivos en la app.",
     "A terminar o Organizador": "Cerrando Organizador",
@@ -1832,6 +1844,12 @@ ES_STRINGS: dict[str, str] = {
 }
 
 FR_STRINGS: dict[str, str] = {
+    "Pastas e ficheiros": "Dossiers et fichiers",
+    "Vigilância e notificações": "Surveillance et notifications",
+    "Aparência e idioma": "Apparence et langue",
+    "Calendário": "Calendrier",
+    "Escreve um comando…": "Écris une commande…",
+    "Sem correspondências": "Aucune correspondance",
     "Notificação indisponível": "Notification indisponible",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notification a expiré ou un fichier n'est plus disponible. Consultez vos fichiers dans l'application.",
     "A terminar o Organizador": "Fermeture d'Organizador",

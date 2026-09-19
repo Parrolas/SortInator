@@ -61,6 +61,7 @@ from organizador.recovery import (
     RecoveryCoordinator,
 )
 from organizador.startup import refresh_windows_integration, set_launch_at_login
+from organizador.ui.commands import Command, CommandRegistry
 from organizador.ui.dialogs import (
     BackupListDialog,
     BulkFilingDialog,
@@ -72,6 +73,7 @@ from organizador.ui.dialogs import (
 from organizador.ui.main_window import MainWindow
 from organizador.ui.notification_dialog import NotificationFilesDialog
 from organizador.ui.pages import SettingsPayload
+from organizador.ui.palette import CommandPalette
 from organizador.ui.prompt import FilingPrompt
 from organizador.ui.theme import apply_theme, get_theme
 from organizador.ui.tray import TrayIcon
@@ -270,6 +272,7 @@ class AppController(QObject):
         self._deferred_download_keys: set[str] = set()
         self._backup_dialog: BackupListDialog | None = None
         self._subject_files_dialog: SubjectFilesDialog | None = None
+        self._command_palette: CommandPalette | None = None
         self._backup_jobs = 0
 
         self._intake_notice_names: list[str] = []
@@ -493,6 +496,108 @@ class AppController(QObject):
         self._refresh()
         self.main_window.show_from_tray(page)
 
+    def show_command_palette(self) -> None:
+        """Open the keyboard palette over the main window with fresh commands."""
+
+        if self._command_palette is None:
+            self._command_palette = CommandPalette(self.main_window)
+            self._command_palette.command_activated.connect(self._run_palette_command)
+        self._command_palette.open_with(self._build_command_registry().commands())
+
+    def _run_palette_command(self, command: object) -> None:
+        """Run one activated palette command on the interface thread."""
+
+        if isinstance(command, Command) and command.callback is not None:
+            command.callback()
+
+    def _build_command_registry(self) -> CommandRegistry:
+        """Collect the actions the palette offers, reflecting the current state."""
+
+        registry = CommandRegistry()
+        pages: tuple[tuple[str, str], ...] = (
+            ("inicio", _("Início")),
+            ("inbox", _("Caixa de Entrada")),
+            ("pesquisa", _("Pesquisa")),
+            ("tarefas", _("Tarefas")),
+            ("disciplinas", _("Disciplinas")),
+            ("definicoes", _("Definições")),
+        )
+        for index, (page_key, title) in enumerate(pages, start=1):
+
+            def _open_page(key: str = page_key) -> None:
+                self.show_main(key)
+
+            registry.register(
+                Command(
+                    id=f"page.{page_key}",
+                    title=title,
+                    keywords="ir para página navegar go to page navigate",
+                    shortcut=f"Ctrl+{index}",
+                    callback=_open_page,
+                )
+            )
+        registry.register(
+            Command(
+                id="search.notes",
+                title=_("Pesquisar nos apontamentos"),
+                keywords="procurar pesquisar texto apontamentos search find notes",
+                shortcut="Ctrl+F",
+                callback=lambda: self.show_main("pesquisa"),
+            )
+        )
+        registry.register(
+            Command(
+                id="action.import",
+                title=_("Importar de Downloads…"),
+                keywords="organizar existentes adicionar import existing files",
+                callback=self._import_existing_downloads,
+            )
+        )
+        watching = self.watcher is not None and self.watcher.running
+        paused = watching and self.watcher is not None and self.watcher.paused
+        if watching:
+            registry.register(
+                Command(
+                    id="action.pause",
+                    title=_("Retomar vigilância") if paused else _("Pausar vigilância"),
+                    keywords="vigilância pausa retomar pause resume watching",
+                    callback=lambda: self._set_paused(not paused),
+                )
+            )
+        registry.register(
+            Command(
+                id="action.undo",
+                title=_("Desfazer última organização"),
+                keywords="desfazer última organização undo revert",
+                callback=self._undo,
+            )
+        )
+        registry.register(
+            Command(
+                id="action.check_updates",
+                title=_("Procurar atualizações…"),
+                keywords="atualizações versão check updates version",
+                callback=lambda: self._begin_update_check(automatic=False),
+            )
+        )
+        registry.register(
+            Command(
+                id="action.open_university",
+                title=_("Abrir pasta Universidade"),
+                keywords="abrir pasta explorar open folder explorer",
+                callback=lambda: self._open_path(self.config.university_root),
+            )
+        )
+        registry.register(
+            Command(
+                id="action.backup",
+                title=_("Criar cópia agora"),
+                keywords="cópia segurança backup create",
+                callback=self.create_user_backup,
+            )
+        )
+        return registry
+
     def _connect_signals(self) -> None:
         self.download_ready.connect(self._ingest_download)
         self.index_completed.connect(self._index_finished)
@@ -512,6 +617,7 @@ class AppController(QObject):
         self.duplicate_found.connect(self._on_duplicate_found)
         self.main_window.hidden_to_tray.connect(self._hidden_to_tray)
         self.main_window.quit_requested.connect(self.shutdown)
+        self.main_window.palette_requested.connect(self.show_command_palette)
 
         self.main_window.home_page.open_path.connect(self._open_path)
         self.main_window.home_page.open_university.connect(
