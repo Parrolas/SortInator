@@ -2,6 +2,33 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.17.0 - 2026-09-19
+
+### Added
+
+- The keyboard command palette (`Ctrl+K`) finds and runs navigation and app
+  actions — pages, notes search, import from Downloads, pause or resume
+  watching, undo, check updates, open the University folder and create a
+  backup — with accent-tolerant, debounced filtering on a worker thread.
+  `Ctrl+F` focuses the notes search; `Ctrl+1`–`Ctrl+6` still navigate.
+- Settings are organised into four titled groups (pastas, vigilância,
+  aparência e idioma, cópias de segurança) separated by one-pixel rules in a
+  single scrollable body, with boolean settings as painted switches and the
+  save action fixed outside the scrolling body.
+- The tasks calendar sits in a 300px panel beside the task list and folds
+  behind a labeled toggle below a 1120px window width; weekend days render
+  in the regular text colour.
+
+### Fixed
+
+- The settings body fills the available window height, so the save row
+  stays pinned at the bottom instead of floating mid-page.
+- Scrolling over the settings value controls no longer edits them: the
+  wheel always scrolls the page; values change through typing, arrow keys
+  or the control's own steppers.
+- Switch state changes keep a short 140ms thumb travel (instant in the
+  high-contrast theme) while remaining immediate in behaviour.
+
 ## 0.16.2 - 2026-09-16
 
 ### Fixed
