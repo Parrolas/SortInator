@@ -2264,6 +2264,180 @@ def test_update_install_finished_transaction_launches_helper_before_shutdown(
         _close_controller(qt_app, controller)
 
 
+def test_prompt_created_task_uses_the_translated_title(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from organizador.controller import AppController, _FileJob
+    from organizador.i18n import set_language
+
+    controller = AppController(app_config)
+    monkeypatch.setattr(controller.tray, "notify", lambda *args, **kwargs: None)
+    source = app_config.downloads_dir / "MAT101_titulo.pdf"
+    source.write_bytes(b"titled task" * 10)
+    item = controller.filer.ingest(source)
+    assert item is not None
+    document = controller.filer.file_document(item.id, subject.id, "Slides", "Titulo.pdf")
+    job = _FileJob(
+        inbox_id=item.id,
+        subject_id=subject.id,
+        kind="Slides",
+        filename="Titulo.pdf",
+        create_task=True,
+        due_date=None,
+    )
+    set_language("en")
+    try:
+        controller._finish_filed(job, document, None)
+
+        tasks = controller.database.list_tasks()
+        assert [task.title for task in tasks] == ["Review Titulo"]
+    finally:
+        set_language("pt")
+        controller.indexer.shutdown()
+        controller.tray.hide()
+        controller.main_window.allow_close = True
+        controller.main_window.close()
+
+
+def test_helper_ready_timeout_terminates_helper_before_aborting(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    app = tmp_path / "Prog App"
+    (app / "_internal").mkdir(parents=True)
+    (app / "Organizador.exe").write_bytes(b"old")
+    transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
+    events: list[str] = []
+
+    class _Process:
+        exited = False
+
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def kill(self) -> None:
+            events.append("kill")
+
+        def wait(self, timeout: float | None = None) -> int:
+            events.append("wait")
+            self.exited = True
+            return 0
+
+        def poll(self) -> int | None:
+            return 0 if self.exited else None
+
+    process = _Process()
+    monkeypatch.setattr(updater, "helper_ready_received", lambda _transaction: False)
+    monkeypatch.setattr(controller, "shutdown", lambda: events.append("shutdown"))
+    try:
+        controller._update_installing = True
+        controller._update_restart_armed = True
+        controller._update_helper_process = process
+        controller._update_transaction = transaction
+
+        controller._wait_for_helper_ready(transaction, time.monotonic() - 1.0)
+
+        assert events == ["terminate", "wait"]
+        assert controller._update_installing is False
+        assert controller._update_restart_armed is False
+        assert controller._update_transaction is None
+        assert not updater.installation_lock_path(app).exists()
+        assert any("assistente de atualização" in str(call[0][1]) for call in notices)
+    finally:
+        updater.abort_update_transaction(transaction)
+        _close_controller(qt_app, controller)
+
+
+def test_helper_ready_timeout_proceeds_when_the_marker_arrives_late(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    app = tmp_path / "Prog App"
+    (app / "_internal").mkdir(parents=True)
+    (app / "Organizador.exe").write_bytes(b"old")
+    transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
+    shutdowns: list[bool] = []
+    aborts: list[bool] = []
+    states = iter([False, True])
+    monkeypatch.setattr(updater, "helper_ready_received", lambda _transaction: next(states, True))
+    monkeypatch.setattr(
+        updater, "abort_update_transaction", lambda _transaction: aborts.append(True)
+    )
+    monkeypatch.setattr(controller, "shutdown", lambda: shutdowns.append(True))
+    try:
+        controller._update_installing = True
+        controller._update_helper_process = None
+        controller._wait_for_helper_ready(transaction, time.monotonic() + 5.0)
+
+        deadline = time.monotonic() + 5.0
+        while not shutdowns and time.monotonic() < deadline:
+            qt_app.processEvents()
+            time.sleep(0.02)
+
+        assert shutdowns == [True]
+        assert aborts == []
+    finally:
+        updater.abort_update_transaction(transaction)
+        _close_controller(qt_app, controller)
+
+
+def test_helper_ready_timeout_fails_closed_when_helper_cannot_be_stopped(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    app = tmp_path / "Prog App"
+    (app / "_internal").mkdir(parents=True)
+    (app / "Organizador.exe").write_bytes(b"old")
+    transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
+    aborts: list[bool] = []
+
+    class _StuckProcess:
+        def terminate(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise TimeoutError("still running")
+
+        def poll(self) -> int | None:
+            return None
+
+    monkeypatch.setattr(updater, "helper_ready_received", lambda _transaction: False)
+    monkeypatch.setattr(
+        updater, "abort_update_transaction", lambda _transaction: aborts.append(True)
+    )
+    try:
+        controller._update_installing = True
+        controller._update_helper_process = _StuckProcess()
+        controller._update_transaction = transaction
+
+        controller._wait_for_helper_ready(transaction, time.monotonic() - 1.0)
+
+        assert aborts == []
+        assert controller._update_installing is True
+        assert controller._update_transaction is transaction
+        assert updater.installation_lock_path(app).exists()
+        assert any("ainda estar em execução" in str(call[0][1]) for call in notices)
+    finally:
+        controller._update_helper_process = None
+        updater.abort_update_transaction(transaction)
+        _close_controller(qt_app, controller)
+
+
 def test_legacy_rollback_bridge_retains_then_cleans(
     qt_app: QApplication,
     app_config: AppConfig,
@@ -2983,6 +3157,7 @@ def test_handshake_validation_failure_skips_ack_and_restores(
         acknowledged: list[bool] = []
         marked: list[bool] = []
         restored: list[bool] = []
+        targeted: list[bool] = []
 
         def noop_activate(
             _state: StartupState, *, background: bool = False, smoke_test: bool = False
@@ -3001,6 +3176,11 @@ def test_handshake_validation_failure_skips_ack_and_restores(
             coordinator, "mark_healthy", lambda *args, **kwargs: marked.append(True)
         )
         monkeypatch.setattr(coordinator, "restore_pending", lambda: restored.append(True) or None)
+        monkeypatch.setattr(
+            coordinator,
+            "restore_update_rollback",
+            lambda bundle: targeted.append(True) or bundle,
+        )
         monkeypatch.setattr(QApplication, "exit", lambda code=0: exits.append(code))
         monkeypatch.setattr(
             QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
@@ -3012,6 +3192,7 @@ def test_handshake_validation_failure_skips_ack_and_restores(
 
         assert exits == [1]
         assert restored == [True]
+        assert targeted == [True]
         assert acknowledged == []
         assert marked == []
     finally:
@@ -3045,6 +3226,7 @@ def test_handshake_ack_failure_restores_data_rollback(
         exits: list[int] = []
         marked: list[bool] = []
         restored: list[bool] = []
+        targeted: list[bool] = []
 
         def noop_activate(
             _state: StartupState, *, background: bool = False, smoke_test: bool = False
@@ -3061,6 +3243,11 @@ def test_handshake_ack_failure_restores_data_rollback(
             coordinator, "mark_healthy", lambda *args, **kwargs: marked.append(True)
         )
         monkeypatch.setattr(coordinator, "restore_pending", lambda: restored.append(True) or None)
+        monkeypatch.setattr(
+            coordinator,
+            "restore_update_rollback",
+            lambda bundle: targeted.append(True) or bundle,
+        )
         monkeypatch.setattr(QApplication, "exit", lambda code=0: exits.append(code))
         monkeypatch.setattr(
             QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
@@ -3072,7 +3259,92 @@ def test_handshake_ack_failure_restores_data_rollback(
 
         assert exits == [1]
         assert restored == [True]
+        assert targeted == [True]
         assert marked == []
+    finally:
+        updater.abort_update_transaction(transaction)
+        _close_controller(qt_app, controller)
+
+
+def test_handshake_transient_validation_failure_restores_quarantined_bundle(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import organizador.recovery as recovery_module
+    from organizador.controller import StartupState
+    from organizador.recovery import (
+        FAILED_MARKER,
+        QUARANTINED_MARKER,
+        RecoveryCoordinator,
+    )
+
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        with controller.database.connect() as connection:
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.commit()
+        coordinator = RecoveryCoordinator(app_config.data_dir)
+        bundle = coordinator.prepare_migration()
+        assert bundle is not None
+        controller.database.initialize()
+        with controller.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO subjects(name, code, folder_name, created_at)
+                VALUES ('After backup', 'NEW', 'After backup', '2026-09-03T00:00:00+00:00')
+                """
+            )
+            connection.commit()
+
+        app = tmp_path / "Handshake App"
+        (app / "_internal").mkdir(parents=True)
+        (app / "Organizador.exe").write_bytes(b"candidate")
+        transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
+        state = StartupState(configured=True, services_ready=True)
+        exits: list[int] = []
+        acknowledged: list[bool] = []
+
+        def noop_activate(
+            _state: StartupState, *, background: bool = False, smoke_test: bool = False
+        ) -> None:
+            return None
+
+        original_validate = coordinator._validate_bundle
+        attempts: list[int] = []
+
+        def transiently_locked(bundle_path: Path) -> object:
+            attempts.append(1)
+            if len(attempts) <= 3:
+                raise PermissionError("locked by antivirus")
+            return original_validate(bundle_path)
+
+        monkeypatch.setattr(controller, "activate", noop_activate)
+        monkeypatch.setattr(coordinator, "_validate_bundle", transiently_locked)
+        monkeypatch.setattr(recovery_module.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(
+            updater, "mark_update_healthy", lambda *args, **kwargs: acknowledged.append(True)
+        )
+        monkeypatch.setattr(QApplication, "exit", lambda code=0: exits.append(code))
+        monkeypatch.setattr(
+            QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+        )
+
+        controller._commit_update_handshake(
+            transaction, bundle, coordinator, state, background=True
+        )
+
+        assert exits == [1]
+        assert acknowledged == []
+        assert attempts == [1, 1, 1, 1]
+        assert (bundle.path / FAILED_MARKER).is_file()
+        assert not (bundle.path / QUARANTINED_MARKER).exists()
+        with controller.database.connect() as connection:
+            new_rows = int(
+                connection.execute("SELECT COUNT(*) FROM subjects WHERE code = 'NEW'").fetchone()[0]
+            )
+        assert new_rows == 0
     finally:
         updater.abort_update_transaction(transaction)
         _close_controller(qt_app, controller)

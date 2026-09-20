@@ -788,14 +788,39 @@ class Database:
             if any(normalise_path_key(Path(row["source_path"])) == source_key for row in pending):
                 raise LookupError("Este download já tem uma recolha por concluir.")
             now = _now()
-            cursor = connection.execute(
+            # A stale row can still own the destination path (its file was
+            # deleted while the row stayed pending/error). Adopt it instead of
+            # inserting a duplicate, which would explode when the ingest
+            # completes and the unique active-path index sees two rows.
+            stale = connection.execute(
                 """
-                INSERT INTO inbox(path, original_path, original_name, size, detected_at, status)
-                VALUES (?, ?, ?, ?, ?, 'recovery')
+                SELECT id FROM inbox
+                WHERE path = ? AND status IN ('pending', 'error')
+                ORDER BY id DESC LIMIT 1
                 """,
-                (str(destination), str(source), source.name, size, now),
-            )
-            inbox_id = cursor.lastrowid
+                (str(destination),),
+            ).fetchone()
+            if stale is None:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO inbox(path, original_path, original_name, size, detected_at, status)
+                    VALUES (?, ?, ?, ?, ?, 'recovery')
+                    """,
+                    (str(destination), str(source), source.name, size, now),
+                )
+                inbox_id = cursor.lastrowid
+            else:
+                inbox_id = int(stale["id"])
+                connection.execute(
+                    """
+                    UPDATE inbox
+                    SET original_path = ?, original_name = ?, size = ?, detected_at = ?,
+                        status = 'recovery', last_error = '',
+                        content_sha256 = '', hash_fingerprint = ''
+                    WHERE id = ?
+                    """,
+                    (str(source), source.name, size, now, inbox_id),
+                )
             event = connection.execute(
                 """
                 INSERT INTO events(action, source_path, destination_path, inbox_id, created_at)
@@ -1431,8 +1456,13 @@ class Database:
         normalized_path = normalise_path_key(expected_path)
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            # An in-flight move owns the row: deleting it here would roll the
+            # move back and leave the file untracked on disk.
             pending = connection.execute(
-                "SELECT 1 FROM events WHERE action = 'undo_pending' AND file_id = ?",
+                """
+                SELECT 1 FROM events
+                WHERE action IN ('undo_pending', 'move_pending') AND file_id = ?
+                """,
                 (file_id,),
             ).fetchone()
             if pending is not None:
@@ -1473,8 +1503,13 @@ class Database:
 
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            # An in-flight move owns the row: dropping it here would roll the
+            # move back and leave the file untracked on disk.
             pending = connection.execute(
-                "SELECT 1 FROM events WHERE action = 'undo_pending' AND file_id = ?",
+                """
+                SELECT 1 FROM events
+                WHERE action IN ('undo_pending', 'move_pending') AND file_id = ?
+                """,
                 (file_id,),
             ).fetchone()
             if pending is not None:

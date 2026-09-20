@@ -277,19 +277,27 @@ def apply(database: Database, report: ReconciliationReport) -> ReconciliationOut
     cancelled_operation_event_ids: list[int] = []
 
     for pending in report.pending_ingest_events:
-        source = _probe(pending.source_path)
-        destination = _probe(pending.destination_path)
-        item = database.get_inbox_item(pending.inbox_id) if pending.inbox_id is not None else None
-        if (
-            source is _ProbeState.MISSING
-            and isinstance(destination, ExistingDownload)
-            and item is not None
-            and destination.size == item.size
-        ):
-            recovered_items.append(database.complete_ingest(pending.id))
-        elif isinstance(source, ExistingDownload) and destination is _ProbeState.MISSING:
-            database.cancel_ingest(pending.id)
-            cancelled_operation_event_ids.append(pending.id)
+        try:
+            source = _probe(pending.source_path)
+            destination = _probe(pending.destination_path)
+            item = (
+                database.get_inbox_item(pending.inbox_id) if pending.inbox_id is not None else None
+            )
+            if (
+                source is _ProbeState.MISSING
+                and isinstance(destination, ExistingDownload)
+                and item is not None
+                and destination.size == item.size
+            ):
+                recovered_items.append(database.complete_ingest(pending.id))
+            elif isinstance(source, ExistingDownload) and destination is _ProbeState.MISSING:
+                database.cancel_ingest(pending.id)
+                cancelled_operation_event_ids.append(pending.id)
+        except (LookupError, sqlite3.IntegrityError) as exc:
+            # One conflicted item must not silence the whole report: it stays
+            # pending and keeps its visible PENDING_INGEST finding instead.
+            LOGGER.warning("Could not reconcile ingest %s: %s", pending.id, exc)
+            continue
 
     for pending in report.pending_version_events:
         source = _probe(pending.source_path)

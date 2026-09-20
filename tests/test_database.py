@@ -561,6 +561,80 @@ def test_unregister_rejects_a_normally_filed_document(
     assert database.get_file(document.id) == document
 
 
+def test_unregister_adopted_file_refused_while_a_move_is_pending(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    path = tmp_path / "adopted.txt"
+    path.write_bytes(b"adopted document")
+    candidate = ExistingDownload.capture(path)
+    assert candidate is not None
+    document = database.adopt_subject_file(candidate, subject.id, "Outros")
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    destination = tmp_path / "Outra" / "Outros" / "adopted.txt"
+    pending = database.begin_document_move(document.id, other.id, "Outros", destination)
+
+    removed = database.unregister_adopted_file(
+        document.id,
+        expected_path=document.current_path,
+        expected_record_token=document.record_token,
+        reviewed_reason=FindingReason.UNTRACKED_SUBJECT_FILE.value,
+    )
+
+    assert not removed
+    assert database.get_file(document.id) is not None
+    assert database.list_pending_moves() == [pending]
+
+    assert database.cancel_document_move(pending.id)
+    removed = database.unregister_adopted_file(
+        document.id,
+        expected_path=document.current_path,
+        expected_record_token=document.record_token,
+        reviewed_reason=FindingReason.UNTRACKED_SUBJECT_FILE.value,
+    )
+    assert removed
+    assert database.get_file(document.id) is None
+
+
+def test_drop_file_record_refused_while_a_move_is_pending(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    destination = tmp_path / "Outra" / "Outros" / document.current_path.name
+    pending = database.begin_document_move(document.id, other.id, "Outros", destination)
+
+    dropped = database.drop_file_record(
+        document.id,
+        expected_path=document.current_path,
+        expected_origin=document.origin,
+        expected_record_token=document.record_token,
+        verify_missing=lambda: True,
+    )
+
+    assert not dropped
+    stored = database.get_file(document.id)
+    assert stored is not None
+    assert stored.catalog_state == "active"
+    assert database.list_pending_moves() == [pending]
+
+    assert database.cancel_document_move(pending.id)
+    dropped = database.drop_file_record(
+        document.id,
+        expected_path=document.current_path,
+        expected_origin=document.origin,
+        expected_record_token=document.record_token,
+        verify_missing=lambda: True,
+    )
+    assert dropped
+    with database.connect() as connection:
+        tombstone = connection.execute(
+            "SELECT catalog_state FROM files WHERE id = ?", (document.id,)
+        ).fetchone()
+    assert tombstone is not None and tombstone["catalog_state"] == "dropped"
+
+
 def test_reviewed_finding_keys_are_reason_specific_and_idempotent(
     database: Database, tmp_path: Path
 ) -> None:
@@ -1188,3 +1262,60 @@ def test_version_rename_lifecycle_updates_the_catalog(
     pending = database.begin_version_rename(file_id, document.current_path.parent / "outro.txt")
     assert database.cancel_version_rename(pending.id) is True
     assert database.list_pending_versions() == []
+
+
+def test_begin_ingest_adopts_a_stale_active_row_owning_the_destination(
+    database: Database, tmp_path: Path
+) -> None:
+    downloads = tmp_path / "origem"
+    downloads.mkdir()
+    destination = tmp_path / "inbox" / "repetido.pdf"
+    destination.parent.mkdir()
+    stale = database.add_inbox_item(destination, downloads / "repetido.pdf", "repetido.pdf", 3)
+    database.set_inbox_status(stale.id, "error", "o ficheiro desapareceu")
+
+    source = downloads / "repetido.pdf"
+    source.write_bytes(b"new")
+    event = database.begin_ingest(source, destination, 3)
+
+    adopted = database.get_inbox_item(stale.id)
+    assert adopted is not None
+    assert adopted.status == "recovery"
+    assert adopted.original_name == "repetido.pdf"
+    assert adopted.size == 3
+    assert adopted.content_sha256 == ""
+
+    completed = database.complete_ingest(event.id, "abc")
+    assert completed.id == stale.id
+    assert completed.status == "pending"
+    assert completed.content_sha256 == "abc"
+
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id FROM inbox WHERE path = ?", (str(destination),)
+        ).fetchall()
+    assert [int(row["id"]) for row in rows] == [stale.id]
+
+
+def test_begin_ingest_never_adopts_filing_or_returning_rows(
+    database: Database, tmp_path: Path
+) -> None:
+    downloads = tmp_path / "origem"
+    downloads.mkdir()
+    destination = tmp_path / "inbox" / "repetido.pdf"
+    destination.parent.mkdir()
+    busy = database.add_inbox_item(destination, downloads / "repetido.pdf", "repetido.pdf", 3)
+    database.set_inbox_status(busy.id, "filing")
+
+    source = downloads / "repetido.pdf"
+    source.write_bytes(b"new")
+    event = database.begin_ingest(source, destination, 3)
+
+    assert event.destination_path == destination
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id, status FROM inbox WHERE path = ? ORDER BY id",
+            (str(destination),),
+        ).fetchall()
+    statuses = {str(row["status"]): int(row["id"]) for row in rows}
+    assert statuses == {"filing": busy.id, "recovery": int(event.inbox_id)}

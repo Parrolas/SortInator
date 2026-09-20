@@ -940,6 +940,13 @@ def test_real_powershell_helper_rolls_back_when_ready_never_arrives(
         assert transaction.staging_dir.is_dir()
         assert not transaction.rollback_dir.exists()
         assert not transaction.lock_path.exists()
+
+        aged = time.time() - 8 * 86400.0
+        os.utime(transaction.state_dir, (aged, aged))
+        removed = updater.prune_abandoned_update_state(tmp_path / "relaunch-data")
+        assert transaction.staging_dir in removed
+        assert not transaction.staging_dir.exists()
+        assert (app / "Organizador.exe").read_bytes() == b"old executable"
     finally:
         if helper.poll() is None:
             helper.terminate()
@@ -1235,3 +1242,93 @@ def test_prune_abandoned_update_state(tmp_path: Path) -> None:
     assert not old.staging_dir.exists()
     assert fresh.state_dir.is_dir()
     assert finished.state_dir.is_dir()
+
+
+def _write_rolled_back_result(transaction: updater.UpdateTransaction, **overrides: object) -> None:
+    payload: dict[str, object] = {
+        "transaction_id": transaction.transaction_id,
+        "status": updater.UpdateResultStatus.ROLLED_BACK,
+        "phase": "wait_ready",
+        "committed": False,
+        "rollback_succeeded": True,
+        "error": "helper error",
+        "old_pid": 1,
+        "new_pid": None,
+        "started_at": "2026-09-03T00:00:00+00:00",
+        "finished_at": "2026-09-03T00:00:01+00:00",
+        "app_dir": transaction.app_dir,
+        "rollback_dir": transaction.rollback_dir,
+    }
+    payload.update(overrides)
+    updater.write_update_result(
+        transaction.result_path,
+        updater.UpdateResult(**payload),  # type: ignore[arg-type]
+    )
+
+
+def test_prune_reclaims_an_aged_rolled_back_staging_copy(tmp_path: Path) -> None:
+    app = _make_app_layout(tmp_path / "Rolled App")
+    data_dir = tmp_path / "data"
+    rolled = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    _make_app_layout(rolled.staging_dir, executable=b"new executable")
+    _write_rolled_back_result(rolled)
+    updater.release_installation_lock(rolled)
+    aged = time.time() - 8 * 86400.0
+    os.utime(rolled.state_dir, (aged, aged))
+
+    removed = updater.prune_abandoned_update_state(data_dir)
+
+    assert rolled.state_dir in removed
+    assert rolled.staging_dir in removed
+    assert not rolled.state_dir.exists()
+    assert not rolled.staging_dir.exists()
+    assert (app / "Organizador.exe").read_bytes() == b"app binary"
+
+
+def test_prune_keeps_a_fresh_rolled_back_result_for_the_notification(
+    tmp_path: Path,
+) -> None:
+    app = _make_app_layout(tmp_path / "Rolled Fresh App")
+    data_dir = tmp_path / "data"
+    rolled = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    _make_app_layout(rolled.staging_dir)
+    _write_rolled_back_result(rolled)
+    updater.release_installation_lock(rolled)
+
+    removed = updater.prune_abandoned_update_state(data_dir)
+
+    assert removed == ()
+    assert rolled.state_dir.is_dir()
+    assert rolled.staging_dir.is_dir()
+
+
+def test_prune_keeps_failed_and_partial_rollback_state(tmp_path: Path) -> None:
+    app = _make_app_layout(tmp_path / "Failed App")
+    data_dir = tmp_path / "data"
+    after_commit = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    _make_app_layout(after_commit.staging_dir)
+    _write_rolled_back_result(
+        after_commit,
+        status=updater.UpdateResultStatus.FAILED_AFTER_COMMIT,
+        committed=True,
+    )
+    updater.release_installation_lock(after_commit)
+    partial = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    _make_app_layout(partial.staging_dir)
+    _write_rolled_back_result(
+        partial,
+        status=updater.UpdateResultStatus.FAILED,
+        rollback_succeeded=False,
+    )
+    updater.release_installation_lock(partial)
+    aged = time.time() - 8 * 86400.0
+    os.utime(after_commit.state_dir, (aged, aged))
+    os.utime(partial.state_dir, (aged, aged))
+
+    removed = updater.prune_abandoned_update_state(data_dir)
+
+    assert removed == ()
+    assert after_commit.state_dir.is_dir()
+    assert after_commit.staging_dir.is_dir()
+    assert partial.state_dir.is_dir()
+    assert partial.staging_dir.is_dir()

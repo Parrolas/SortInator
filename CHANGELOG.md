@@ -2,6 +2,39 @@
 
 All notable changes to Organizador are recorded here.
 
+## 0.17.1 - 2026-09-20
+
+### Fixed
+
+- An update whose data validation hit a transient file lock (for example an
+  antivirus scan) can no longer leave an installation that refuses to start:
+  bundle validation retries briefly before quarantining, and a failed update
+  handshake rolls the data back even when the bundle was already quarantined.
+- Deleting a file and re-downloading the same name no longer bounces with a
+  database conflict: a new ingest adopts the stale inbox row that still owns
+  the destination path.
+- One conflicted interrupted ingest no longer aborts the whole startup
+  reconciliation; the item stays visible as a finding while everything else
+  is still repaired.
+- "Remover do catálogo" and "Remover registo em falta" refuse while a move is
+  in flight, so a document can no longer end up untracked on disk.
+- Saving settings (or any watcher restart) during stabilization no longer
+  strands a download: undelivered candidates are handed to the new watcher.
+- Files below the configured minimum size no longer occupy the stabilizer for
+  two minutes per attempt; they are rejected once after they finish and are
+  reconsidered only when their content changes.
+- An update helper that never becomes ready is terminated before its lock is
+  released; if it cannot be stopped, the lock is kept and the notice explains
+  that a restart is needed instead of letting a second helper race it.
+- Backup import enforces decompressed size caps (512 MiB database, 16 MiB
+  settings, 1 GiB total) and refuses encrypted members, so a crafted archive
+  can no longer fill the disk before validation.
+- Rolled-back updates reclaim their staged application copy on a later launch
+  instead of retaining it forever.
+- The adopt-file dialog, the "Rever {name}" task titles created from the
+  filing prompt, and settings validation errors now follow the selected
+  language.
+
 ## 0.17.0 - 2026-09-19
 
 ### Added

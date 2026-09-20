@@ -235,6 +235,7 @@ class AppController(QObject):
         self._manual_import_errors: list[str] = []
         self._watcher_generation = 0
         self._pending_update: UpdateInfo | None = None
+        self._update_helper_process: subprocess.Popen[bytes] | None = None
         self._update_installing = False
         self._update_checking = False
         self._update_check_generation = 0
@@ -789,7 +790,11 @@ class AppController(QObject):
         self._watcher_generation += 1
         generation = self._watcher_generation
         interrupted_import = self._manual_import_active
+        undelivered: list[Path] = []
         if self.watcher is not None:
+            # Before the replacement baselines Downloads, rescue candidates
+            # that were queued or stabilizing and were never offered.
+            undelivered = self.watcher.take_undelivered()
             self.watcher.stop()
             self.watcher = None
         if interrupted_import:
@@ -819,6 +824,7 @@ class AppController(QObject):
                 _("Não foi possível abrir a pasta configurada: {error}").format(error=exc),
             )
             return
+        candidate.adopt(undelivered)
         self.watcher = candidate
 
     def _ingest_download(
@@ -826,7 +832,15 @@ class AppController(QObject):
         generation: int,
         candidate: Path | ExistingDownload,
     ) -> None:
-        if self._shutting_down or generation != self._watcher_generation:
+        if self._shutting_down:
+            return
+        if generation != self._watcher_generation:
+            # A restart can race a ready signal that was already queued; the
+            # current watcher re-offers it instead of dropping the download.
+            if self.watcher is not None:
+                path = candidate.path if isinstance(candidate, ExistingDownload) else candidate
+                with suppress(Exception):
+                    self.watcher.adopt([path])
             return
         if self._update_installing:
             path = candidate.path if isinstance(candidate, ExistingDownload) else candidate
@@ -1212,9 +1226,11 @@ class AppController(QObject):
             return
         answer = QMessageBox.question(
             self.main_window,
-            "Adotar ficheiro existente?",
-            f"{finding.path.name} será adicionado ao catálogo e à pesquisa local. "
-            "O ficheiro não será movido, renomeado nem alterado.",
+            _("Adotar ficheiro existente?"),
+            _(
+                "{name} será adicionado ao catálogo e à pesquisa local. "
+                "O ficheiro não será movido, renomeado nem alterado."
+            ).format(name=finding.path.name),
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
@@ -1222,7 +1238,7 @@ class AppController(QObject):
             return
         try:
             document = adopt_untracked_subject_file(self.config, self.database, finding)
-        except (LookupError, ValueError, OSError, sqlite3.Error) as exc:
+        except (LookupError, ValueError, OSError, RuntimeError, sqlite3.Error) as exc:
             QMessageBox.warning(self.main_window, _("Não foi possível adotar"), str(exc))
             self._refresh_reconciliation_report()
             return
@@ -1234,6 +1250,14 @@ class AppController(QObject):
 
     def _drop_missing_record(self, finding: ReconciliationFinding) -> None:
         if finding.reason is not FindingReason.MISSING_DOCUMENT or finding.document is None:
+            return
+        if ("file", str(finding.document.id)) in self._transfer_claims:
+            QMessageBox.information(
+                self.main_window,
+                _("Registo mantido"),
+                _("O ficheiro ou o registo mudou desde a verificação. Nada foi removido."),
+            )
+            self._refresh_reconciliation_report()
             return
         answer = QMessageBox.question(
             self.main_window,
@@ -1278,6 +1302,14 @@ class AppController(QObject):
     def _unregister_adopted_file(self, file_id: int) -> None:
         document = self.database.get_file(file_id)
         if document is None or document.origin != "adopted":
+            self._refresh_reconciliation_report()
+            return
+        if ("file", str(file_id)) in self._transfer_claims:
+            QMessageBox.information(
+                self.main_window,
+                _("Registo mantido"),
+                _("O registo mudou desde que a página foi aberta. Nada foi removido."),
+            )
             self._refresh_reconciliation_report()
             return
         answer = QMessageBox.question(
@@ -1431,7 +1463,10 @@ class AppController(QObject):
         document = result
         if job.create_task:
             self.database.add_task(
-                f"Rever {Path(job.filename).stem}", job.subject_id, job.due_date, document.id
+                _("Rever {name}").format(name=Path(job.filename).stem),
+                job.subject_id,
+                job.due_date,
+                document.id,
             )
         self.indexer.submit(document)
         subject = self.database.get_subject(job.subject_id)
@@ -1912,7 +1947,7 @@ class AppController(QObject):
             self.config.downloads_dir = values["downloads_dir"]
             self.config.allowed_extensions = parse_extensions(str(values["extensions"]))
             if not self.config.allowed_extensions:
-                raise ValueError("Adiciona pelo menos uma extensão aceite.")
+                raise ValueError(_("Adiciona pelo menos uma extensão aceite."))
             self.config.minimum_file_size = int(values["minimum_file_size"])
             self.config.prompt_timeout_seconds = int(values["prompt_timeout_seconds"])
             self.config.prompt_timeout_enabled = bool(values["prompt_timeout_enabled"])
@@ -2511,9 +2546,12 @@ class AppController(QObject):
             transaction = result
             self._update_transaction = transaction
             try:
-                updater.launch_update_helper(transaction, wait_ready=False)
+                self._update_helper_process = updater.launch_update_helper(
+                    transaction, wait_ready=False
+                )
             except Exception as exc:
                 LOGGER.exception("Could not launch the update helper")
+                self._update_helper_process = None
                 updater.abort_update_transaction(transaction)
                 self._update_installing = False
                 self._update_transaction = None
@@ -2563,20 +2601,67 @@ class AppController(QObject):
             self.shutdown()
             return
         if time.monotonic() >= deadline:
-            LOGGER.error("Update helper did not become ready; aborting the handoff")
-            updater.abort_update_transaction(transaction)
-            self._update_installing = False
+            # The marker may have appeared during the last poll gap.
+            if updater.helper_ready_received(transaction):
+                self.tray.notify(
+                    _("Atualização pronta"),
+                    _("A reiniciar para aplicar a atualização…"),
+                )
+                self.shutdown()
+                return
+            self._abort_unstarted_helper(transaction)
+            return
+        QTimer.singleShot(150, lambda: self._wait_for_helper_ready(transaction, deadline))
+
+    def _abort_unstarted_helper(self, transaction: UpdateTransaction) -> None:
+        """Stop a helper that never became ready before releasing its lock.
+
+        The ready marker is written before any directory move, so a helper
+        without it is still pre-flight and can be terminated safely. If the
+        process cannot be confirmed dead, fail closed: keep the lock and the
+        install gate so a second click can never race a live helper; the next
+        launch reclaims everything once the process is gone.
+        """
+
+        process = self._update_helper_process
+        if process is not None and process.poll() is None:
+            LOGGER.warning("Update helper did not report ready; terminating it")
+            with suppress(Exception):
+                process.terminate()
+            try:
+                process.wait(timeout=5.0)
+            except Exception:
+                with suppress(Exception):
+                    process.kill()
+                with suppress(Exception):
+                    process.wait(timeout=5.0)
+        if process is not None and process.poll() is None:
+            LOGGER.error("Update helper could not be stopped; keeping the update lock")
             self._update_restart_armed = False
-            self._update_transaction = None
             self.tray.set_update_state(version=self._pending_version_text())
             self.tray.notify(
                 _("Atualização falhou"),
-                _("Não foi possível iniciar o assistente de atualização."),
+                _(
+                    "O assistente de atualização pode ainda estar em execução. "
+                    "Reinicia a aplicação e tenta novamente."
+                ),
                 icon=QSystemTrayIcon.MessageIcon.Warning,
             )
             self._release_deferred_downloads()
             return
-        QTimer.singleShot(150, lambda: self._wait_for_helper_ready(transaction, deadline))
+        self._update_helper_process = None
+        LOGGER.error("Update helper did not become ready; aborting the handoff")
+        updater.abort_update_transaction(transaction)
+        self._update_installing = False
+        self._update_restart_armed = False
+        self._update_transaction = None
+        self.tray.set_update_state(version=self._pending_version_text())
+        self.tray.notify(
+            _("Atualização falhou"),
+            _("Não foi possível iniciar o assistente de atualização."),
+            icon=QSystemTrayIcon.MessageIcon.Warning,
+        )
+        self._release_deferred_downloads()
 
     def run_update_handshake(
         self,
@@ -2646,6 +2731,23 @@ class AppController(QObject):
             ),
         )
 
+    @staticmethod
+    def _restore_migration_rollback(
+        coordinator: RecoveryCoordinator, bundle: RecoveryBundle | None
+    ) -> None:
+        """Roll migrated data back, even when validation quarantined the bundle.
+
+        ``restore_pending`` only sees pending bundles, so a transient failure
+        that quarantined this update's bundle would silently skip the data
+        rollback; the targeted restore closes that hole.
+        """
+
+        if bundle is None:
+            return
+        with suppress(Exception):
+            if coordinator.restore_pending() is None:
+                coordinator.restore_update_rollback(bundle)
+
     def _commit_update_handshake(
         self,
         transaction: UpdateTransaction,
@@ -2661,9 +2763,7 @@ class AppController(QObject):
             self.activate(state, background=background)
         except Exception:
             LOGGER.exception("Updated application failed to activate after commit")
-            if recovery_bundle is not None:
-                with suppress(Exception):
-                    coordinator.restore_pending()
+            self._restore_migration_rollback(coordinator, recovery_bundle)
             QMessageBox.critical(
                 self.main_window,
                 _("Não foi possível concluir a atualização"),
@@ -2681,8 +2781,7 @@ class AppController(QObject):
                 coordinator.validate_migrated(recovery_bundle)
             except Exception:
                 LOGGER.exception("Migrated data failed validation before acknowledgement")
-                with suppress(Exception):
-                    coordinator.restore_pending()
+                self._restore_migration_rollback(coordinator, recovery_bundle)
                 QMessageBox.critical(
                     self.main_window,
                     _("Não foi possível concluir a atualização"),
@@ -2699,9 +2798,7 @@ class AppController(QObject):
             # The helper still owns the binary rollback; keep the data
             # rollback possible so both decisions stay aligned.
             LOGGER.exception("Could not acknowledge update health to the helper")
-            if recovery_bundle is not None:
-                with suppress(Exception):
-                    coordinator.restore_pending()
+            self._restore_migration_rollback(coordinator, recovery_bundle)
             QApplication.exit(1)
             return
         if recovery_bundle is not None:

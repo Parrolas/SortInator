@@ -939,3 +939,115 @@ def test_reconciliation_and_adoption_compare_canonical_paths(
     assert report.untracked_subject_files == ()
     with pytest.raises(LookupError, match="outro caminho"):
         database.adopt_subject_file(candidate, subject.id, "Slides")
+
+
+def test_conflicted_ingest_pending_does_not_abort_the_reconciliation(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+) -> None:
+    destination = app_config.inbox_dir / "conflito.pdf"
+    destination.write_bytes(b"interrupted ingest" * 10)
+    stale = database.add_inbox_item(
+        destination,
+        app_config.downloads_dir / destination.name,
+        destination.name,
+        destination.stat().st_size,
+    )
+    source = app_config.downloads_dir / "conflito.pdf"
+    with database.connect() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO inbox(path, original_path, original_name, size, detected_at, status)
+            VALUES (?, ?, ?, ?, '2026-09-03T00:00:00+00:00', 'recovery')
+            """,
+            (str(destination), str(source), source.name, destination.stat().st_size),
+        )
+        recovery_id = int(cursor.lastrowid)
+        connection.execute(
+            """
+            INSERT INTO events(action, source_path, destination_path, inbox_id, created_at)
+            VALUES ('ingest_pending', ?, ?, ?, '2026-09-03T00:00:00+00:00')
+            """,
+            (str(source), str(destination), recovery_id),
+        )
+        connection.commit()
+
+    movers = app_config.downloads_dir / "mover-combinado.pdf"
+    movers.write_bytes(b"pending move" * 20)
+    item = filer.ingest(movers)
+    assert item is not None
+    document = filer.file_document(item.id, subject.id, "Slides", "Combinado.pdf")
+    other = database.add_subject("Outra", "OUT", "#123456", (), "OUT - Outra")
+    filer.ensure_subject_structure(other)
+    move_destination = app_config.university_root / other.folder_name / "Outros" / "Combinado.pdf"
+    move = database.begin_document_move(document.id, other.id, "Outros", move_destination)
+    document.current_path.replace(move_destination)
+
+    report = scan(app_config, database)
+    outcome = apply(database, report)
+
+    assert move.id in outcome.completed_operation_event_ids
+    assert [event.inbox_id for event in database.list_pending_ingests()] == [recovery_id]
+    with database.connect() as connection:
+        stale_row = connection.execute(
+            "SELECT status FROM inbox WHERE id = ?", (stale.id,)
+        ).fetchone()
+    assert stale_row is not None and stale_row["status"] == "pending"
+    reasons = {finding.reason for finding in findings(report)}
+    assert FindingReason.PENDING_INGEST_DESTINATION in reasons
+
+    second = apply(database, scan(app_config, database))
+    assert second.completed_operation_event_ids == ()
+    assert len(database.list_pending_ingests()) == 1
+
+
+def test_completed_ingest_lookup_failure_is_isolated_per_item(
+    app_config: AppConfig,
+    database: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event_ids: list[int] = []
+    for name in ("primeiro.pdf", "segundo.pdf"):
+        destination = app_config.inbox_dir / name
+        destination.write_bytes(b"recolha pendente" * 10)
+        source = app_config.downloads_dir / name
+        with database.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO inbox(path, original_path, original_name, size, detected_at, status)
+                VALUES (?, ?, ?, ?, '2026-09-03T00:00:00+00:00', 'recovery')
+                """,
+                (str(destination), str(source), name, destination.stat().st_size),
+            )
+            inbox_id = int(cursor.lastrowid)
+            event = connection.execute(
+                """
+                INSERT INTO events(action, source_path, destination_path, inbox_id, created_at)
+                VALUES ('ingest_pending', ?, ?, ?, '2026-09-03T00:00:00+00:00')
+                """,
+                (str(source), str(destination), inbox_id),
+            )
+            event_ids.append(int(event.lastrowid))
+            connection.commit()
+
+    original = Database.complete_ingest
+    failing_event = event_ids[0]
+
+    def flaky_complete(self: Database, event_id: int, content_sha256: str = "") -> object:
+        if event_id == failing_event:
+            raise LookupError("A recolha pendente já não existe.")
+        return original(self, event_id, content_sha256)
+
+    monkeypatch.setattr(Database, "complete_ingest", flaky_complete)
+
+    outcome = apply(database, scan(app_config, database))
+
+    assert [event.id for event in database.list_pending_ingests()] == [failing_event]
+    assert len(outcome.recovered_items) == 1
+    with database.connect() as connection:
+        statuses = {
+            str(row["status"]) for row in connection.execute("SELECT status FROM inbox").fetchall()
+        }
+    assert statuses == {"pending", "recovery"}

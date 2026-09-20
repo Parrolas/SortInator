@@ -64,17 +64,19 @@ def wait_until_stable(
     timeout: float = 120.0,
     interval: float = 0.5,
     stable_samples: int = 3,
-    minimum_size: int = 1,
     stop_event: Event | None = None,
 ) -> bool:
     """Wait until a file stops changing and is no longer locked.
+
+    Stability is purely "size and mtime unchanged"; size policy (such as the
+    configured minimum) belongs to the caller, so a below-minimum file must
+    not keep the shared stabilization worker busy for the whole timeout.
 
     Args:
         path: Candidate final download path.
         timeout: Maximum wait before leaving the file untouched.
         interval: Delay between stat samples.
         stable_samples: Number of identical consecutive samples required.
-        minimum_size: Files smaller than this are not accepted.
         stop_event: Optional application shutdown signal.
 
     Returns:
@@ -98,7 +100,7 @@ def wait_until_stable(
             previous = None
         else:
             signature = (stat.st_size, stat.st_mtime_ns)
-            if stat.st_size >= minimum_size and signature == previous:
+            if signature == previous:
                 unchanged += 1
             else:
                 unchanged = 0

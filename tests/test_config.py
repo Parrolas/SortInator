@@ -207,3 +207,20 @@ def test_updates_dir_is_derived_and_never_serialized(app_config: AppConfig) -> N
 
     assert "updates_dir" not in payload
     assert "updates" not in payload
+
+
+def test_validation_errors_follow_the_active_language(app_config: AppConfig) -> None:
+    from organizador.i18n import set_language
+
+    app_config.minimum_file_size = -1
+    try:
+        set_language("en")
+        with pytest.raises(ValueError, match="minimum size cannot be negative"):
+            app_config.validate()
+        set_language("es")
+        with pytest.raises(ValueError, match="tamaño mínimo no puede ser negativo"):
+            app_config.validate()
+    finally:
+        set_language("pt")
+    with pytest.raises(ValueError, match="tamanho mínimo não pode ser negativo"):
+        app_config.validate()

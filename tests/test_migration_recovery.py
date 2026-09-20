@@ -167,6 +167,143 @@ def test_restore_quarantines_tampered_or_unsafe_bundles(tmp_path: Path, tamper: 
     assert not (bundle.path / PENDING_MARKER).exists()
 
 
+def test_transient_bundle_validation_retries_before_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    database = _old_database(data_dir)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.prepare_migration()
+    assert bundle is not None
+    database.initialize()
+
+    attempts: list[int] = []
+    original_validate = coordinator._validate_bundle
+
+    def flaky(bundle_path: Path) -> Any:
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise PermissionError("locked by antivirus")
+        return original_validate(bundle_path)
+
+    monkeypatch.setattr(coordinator, "_validate_bundle", flaky)
+    monkeypatch.setattr(recovery_module.time, "sleep", lambda _seconds: None)
+
+    coordinator.validate_migrated(bundle)
+
+    assert len(attempts) == 3
+    assert (bundle.path / PENDING_MARKER).is_file()
+    assert not (bundle.path / QUARANTINED_MARKER).exists()
+
+
+def test_persistent_transient_failure_still_quarantines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    database = _old_database(data_dir)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.prepare_migration()
+    assert bundle is not None
+    database.initialize()
+
+    def locked(bundle_path: Path) -> Any:
+        raise PermissionError("locked by antivirus")
+
+    monkeypatch.setattr(coordinator, "_validate_bundle", locked)
+    monkeypatch.setattr(recovery_module.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(RecoveryError, match="not trustworthy"):
+        coordinator.validate_migrated(bundle)
+
+    assert (bundle.path / QUARANTINED_MARKER).is_file()
+    assert not (bundle.path / PENDING_MARKER).exists()
+
+
+def test_restore_update_rollback_restores_a_quarantined_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    database = _old_database(data_dir)
+    original_settings = b'{"language": "pt"}\n'
+    (data_dir / "settings.json").write_bytes(original_settings)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.prepare_migration()
+    assert bundle is not None
+
+    database.initialize()
+    with database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO subjects(name, code, folder_name, created_at)
+            VALUES ('After backup', 'NEW', 'After backup', '2026-09-03T00:00:00+00:00')
+            """
+        )
+        connection.commit()
+    (data_dir / "settings.json").write_bytes(b'{"replacement": true}\n')
+
+    def locked(bundle_path: Path) -> Any:
+        raise PermissionError("locked by antivirus")
+
+    original_validate = coordinator._validate_bundle
+    monkeypatch.setattr(coordinator, "_validate_bundle", locked)
+    monkeypatch.setattr(recovery_module.time, "sleep", lambda _seconds: None)
+    with pytest.raises(RecoveryError):
+        coordinator.validate_migrated(bundle)
+    assert (bundle.path / QUARANTINED_MARKER).is_file()
+
+    # The antivirus lock clears before the helper rolls the binaries back.
+    monkeypatch.setattr(coordinator, "_validate_bundle", original_validate)
+
+    restored = coordinator.restore_update_rollback(bundle)
+
+    assert restored == bundle
+    assert (data_dir / "settings.json").read_bytes() == original_settings
+    with database.connect() as connection:
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        new_rows = int(
+            connection.execute("SELECT COUNT(*) FROM subjects WHERE code = 'NEW'").fetchone()[0]
+        )
+    assert version == 4
+    assert new_rows == 0
+    assert (bundle.path / FAILED_MARKER).is_file()
+    assert not (bundle.path / QUARANTINED_MARKER).exists()
+
+    with pytest.raises(RecoveryError):
+        coordinator.restore_update_rollback(bundle)
+
+
+def test_restore_update_rollback_refuses_healthy_or_broken_bundles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = tmp_path / "data"
+    database = _old_database(data_dir)
+    coordinator = RecoveryCoordinator(data_dir)
+    healthy = coordinator.prepare_migration()
+    assert healthy is not None
+    database.initialize()
+    coordinator.mark_healthy(healthy)
+
+    with pytest.raises(RecoveryError, match="healthy"):
+        coordinator.restore_update_rollback(healthy)
+
+    tampered_dir = tmp_path / "tampered"
+    tampered_database = _old_database(tampered_dir)
+    tampered_coordinator = RecoveryCoordinator(tampered_dir)
+    tampered = tampered_coordinator.prepare_migration()
+    assert tampered is not None
+    tampered_database.initialize()
+    (tampered.path / "database.sqlite3").write_bytes(b"tampered")
+
+    with pytest.raises(RecoveryError):
+        tampered_coordinator.restore_pending()
+    assert (tampered.path / QUARANTINED_MARKER).is_file()
+
+    with pytest.raises(RecoveryError):
+        tampered_coordinator.restore_update_rollback(tampered)
+    assert (tampered.path / QUARANTINED_MARKER).is_file()
+    assert not (tampered.path / FAILED_MARKER).exists()
+
+
 def test_healthy_marker_prevents_a_later_restore(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     database = _old_database(data_dir)

@@ -747,7 +747,13 @@ def read_staged_release_version(staging_dir: Path) -> Version | None:
 
 
 def prune_abandoned_update_state(data_dir: Path, *, max_age_days: float = 7.0) -> tuple[Path, ...]:
-    """Remove old result-less transaction state (and their staging) left by crashes."""
+    """Remove old transaction state (and their staging) left by crashes.
+
+    Result-bearing entries are kept for the notification window, except for
+    completed rollbacks: they only leave a full staged copy of the new
+    version behind, and by the time the rollback receipt exists the old
+    version is verifiably back in place.
+    """
 
     root = updates_directory(data_dir)
     if not root.is_dir() or root.is_symlink():
@@ -758,8 +764,20 @@ def prune_abandoned_update_state(data_dir: Path, *, max_age_days: float = 7.0) -
         try:
             if not child.is_dir() or child.is_symlink():
                 continue
-            if (child / "result.json").exists():
-                continue
+            result_path = child / "result.json"
+            if result_path.exists():
+                try:
+                    result = read_update_result(result_path)
+                except (OSError, ValueError, KeyError):
+                    continue
+                if result is None:
+                    continue
+                if not (
+                    result.status is UpdateResultStatus.ROLLED_BACK
+                    and result.rollback_succeeded is True
+                    and result.app_dir.is_dir()
+                ):
+                    continue
             try:
                 fresh = child.stat().st_mtime >= cutoff
             except OSError:

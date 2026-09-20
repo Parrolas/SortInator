@@ -81,6 +81,7 @@ class DownloadWatcher:
         self._retry_delays = tuple(float(delay) for delay in retry_delays)
         self._queue: Queue[tuple[PathKey, DownloadCandidate] | None] = Queue()
         self._pending: set[PathKey] = set()
+        self._candidates: dict[PathKey, DownloadCandidate] = {}
         self._known: set[PathKey] = set()
         self._manual_pending: set[PathKey] = set()
         self._manual_skipped = 0
@@ -168,6 +169,7 @@ class DownloadWatcher:
             if self._manual_pending:
                 completed_skips = self._manual_skipped + len(self._manual_pending)
             self._pending.clear()
+            self._candidates.clear()
             self._manual_pending.clear()
             self._manual_skipped = 0
             self._retry_after.clear()
@@ -242,6 +244,7 @@ class DownloadWatcher:
             if key in self._pending:
                 return
             self._pending.add(key)
+            self._candidates[key] = candidate
         self._queue.put((key, candidate))
 
     def requeue(self, path: Path) -> None:
@@ -304,6 +307,7 @@ class DownloadWatcher:
                     continue
                 self._pending.add(key)
                 self._manual_pending.add(key)
+                self._candidates[key] = candidate
                 queued.append((key, candidate))
             self._manual_skipped = skipped
             if not queued:
@@ -311,6 +315,37 @@ class DownloadWatcher:
         for key, candidate in queued:
             self._queue.put((key, candidate))
         return len(queued)
+
+    def take_undelivered(self) -> list[Path]:
+        """Remove and return candidates that were never handed to the controller.
+
+        A restart baselines everything currently in Downloads, so queued or
+        in-flight candidates would otherwise be silently ignored. Callers take
+        them before ``stop()`` and hand them to the replacement watcher via
+        ``adopt``. Confirmed manual batches are excluded: stopping already
+        reports them as skipped.
+        """
+
+        with self._lock:
+            paths: list[Path] = []
+            for key, candidate in self._candidates.items():
+                if key in self._manual_pending:
+                    continue
+                path = candidate.path if isinstance(candidate, ExistingDownload) else candidate
+                paths.append(path)
+            self._candidates.clear()
+        return sorted(set(paths), key=lambda path: path.name)
+
+    def adopt(self, paths: Sequence[Path]) -> None:
+        """Queue paths handed over by a restarted watcher as fresh candidates."""
+
+        for path in paths:
+            try:
+                if not path.is_file():
+                    continue
+            except OSError:
+                continue
+            self.enqueue(path)
 
     def _work(self) -> None:
         while not self._stop.is_set():
@@ -330,12 +365,11 @@ class DownloadWatcher:
                 path = candidate
             delivered = False
             retry = False
+            rejected = False
             paused_interrupted = False
             try:
                 unchanged_before = manual_candidate is None or manual_candidate.still_matches()
-                stable = unchanged_before and wait_until_stable(
-                    path, minimum_size=self.config.minimum_file_size, stop_event=self._stop
-                )
+                stable = unchanged_before and wait_until_stable(path, stop_event=self._stop)
                 unchanged_after = manual_candidate is None or manual_candidate.still_matches()
                 if (
                     stable
@@ -343,8 +377,11 @@ class DownloadWatcher:
                     and not self._stop.is_set()
                     and (manual_candidate is not None or not self._paused.is_set())
                 ):
-                    self.on_ready(candidate)
-                    delivered = True
+                    if manual_candidate is None and self._below_minimum(path):
+                        rejected = True
+                    else:
+                        self.on_ready(candidate)
+                        delivered = True
                 elif (
                     manual_candidate is None
                     and not self._stop.is_set()
@@ -360,6 +397,7 @@ class DownloadWatcher:
                 retries_exhausted = False
                 with self._lock:
                     self._pending.discard(key)
+                    self._candidates.pop(key, None)
                     # A successful hand-off is not a successful move: the
                     # controller can still fail and requeue the path, so the
                     # bounded retry budget is only cleared once the sweep sees
@@ -367,6 +405,11 @@ class DownloadWatcher:
                     if paused_interrupted:
                         self._known.add(key)
                         self._paused_seen.add(key)
+                    elif rejected:
+                        # Terminal for this exact file: the sweep re-offers it
+                        # only when its identity changes (a real re-download)
+                        # instead of burning the timeout on every attempt.
+                        self._retry_exhausted[key] = ExistingDownload.capture(path)
                     elif retry:
                         attempt = self._retry_attempts.get(key, 0)
                         if attempt < len(self._retry_delays):
@@ -387,6 +430,8 @@ class DownloadWatcher:
                                 completed_skips = self._manual_skipped
                                 self._manual_skipped = 0
                 self._queue.task_done()
+                if rejected:
+                    LOGGER.info("Download ignored below the minimum size: %s", path)
                 if retries_exhausted:
                     LOGGER.warning("Download did not stabilize after bounded retries: %s", path)
                 if completed_skips is not None and self.on_import_complete is not None:
@@ -442,6 +487,14 @@ class DownloadWatcher:
         except OSError:
             LOGGER.exception("Could not scan Downloads")
             return None
+
+    def _below_minimum(self, path: Path) -> bool:
+        """Return whether a finished download is below the configured minimum."""
+
+        try:
+            return path.stat().st_size < self.config.minimum_file_size
+        except OSError:
+            return False
 
     def _normalise_candidate(self, path: Path) -> tuple[Path, PathKey] | None:
         try:

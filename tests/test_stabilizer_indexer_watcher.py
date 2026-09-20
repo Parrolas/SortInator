@@ -900,3 +900,232 @@ def test_failed_extraction_can_be_fixed_and_reindexed(
 
     assert database.search("recuperado")
     assert database.list_failed_index_documents() == []
+
+
+def test_stabilizer_treats_a_zero_byte_finished_file_as_stable(tmp_path: Path) -> None:
+    empty = tmp_path / "vazio.pdf"
+    empty.write_bytes(b"")
+
+    assert wait_until_stable(empty, interval=0.01, stable_samples=1, timeout=0.5)
+
+
+def test_below_minimum_download_is_rejected_without_retrying(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready: list[Path | ExistingDownload] = []
+    watcher = DownloadWatcher(app_config, ready.append, retry_delays=(0.0,))
+    monkeypatch.setattr(
+        "organizador.watcher.wait_until_stable",
+        lambda path, **kwargs: wait_until_stable(
+            path, interval=0.01, stable_samples=1, timeout=1.0, **kwargs
+        ),
+    )
+    watcher.start(observe=False)
+    try:
+        tiny = app_config.downloads_dir / "abaixo-do-minimo.pdf"
+        tiny.write_bytes(b"x" * 2)
+        normalised = watcher._normalise_candidate(tiny)
+        assert normalised is not None
+        _, key = normalised
+        watcher.enqueue(tiny)
+
+        deadline = monotonic() + 5.0
+        while key not in watcher._retry_exhausted and monotonic() < deadline:
+            sleep(0.01)
+
+        assert key in watcher._retry_exhausted
+        assert watcher._retry_attempts == {}
+        assert ready == []
+    finally:
+        watcher.stop()
+
+
+def test_below_minimum_rejection_reconsiders_after_identity_change(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready: list[Path | ExistingDownload] = []
+    watcher = DownloadWatcher(app_config, ready.append, retry_delays=(0.0,))
+    monkeypatch.setattr(
+        "organizador.watcher.wait_until_stable",
+        lambda path, **kwargs: wait_until_stable(
+            path, interval=0.01, stable_samples=1, timeout=1.0, **kwargs
+        ),
+    )
+    watcher.start(observe=False)
+    try:
+        path = app_config.downloads_dir / "redownload.pdf"
+        path.write_bytes(b"x" * 2)
+        normalised = watcher._normalise_candidate(path)
+        assert normalised is not None
+        _, key = normalised
+        watcher.enqueue(path)
+
+        deadline = monotonic() + 5.0
+        while key not in watcher._retry_exhausted and monotonic() < deadline:
+            sleep(0.01)
+        assert key in watcher._retry_exhausted
+
+        sleep(0.01)
+        path.write_bytes(b"x" * 400)
+        watcher.enqueue(path)
+
+        deadline = monotonic() + 5.0
+        while not ready and monotonic() < deadline:
+            sleep(0.01)
+
+        assert ready == [path]
+    finally:
+        watcher.stop()
+
+
+def test_tiny_download_does_not_starve_the_next_arrival(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready: list[Path | ExistingDownload] = []
+    watcher = DownloadWatcher(app_config, ready.append, retry_delays=(0.0,))
+    monkeypatch.setattr(
+        "organizador.watcher.wait_until_stable",
+        lambda path, **kwargs: wait_until_stable(
+            path, interval=0.01, stable_samples=1, timeout=1.0, **kwargs
+        ),
+    )
+    watcher.start(observe=False)
+    try:
+        tiny = app_config.downloads_dir / "pequeno.pdf"
+        tiny.write_bytes(b"x" * 2)
+        good = app_config.downloads_dir / "seguinte.pdf"
+        good.write_bytes(b"x" * 400)
+        watcher.enqueue(tiny)
+        watcher.enqueue(good)
+
+        deadline = monotonic() + 5.0
+        while not ready and monotonic() < deadline:
+            sleep(0.01)
+
+        assert ready == [good]
+    finally:
+        watcher.stop()
+
+
+def test_take_undelivered_returns_queued_candidates_and_clears(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = Event()
+
+    def blocked(*_args: object, **kwargs: object) -> bool:
+        started.set()
+        stop_event = kwargs["stop_event"]
+        assert isinstance(stop_event, Event)
+        stop_event.wait(2.0)
+        return False
+
+    monkeypatch.setattr("organizador.watcher.wait_until_stable", blocked)
+    watcher = DownloadWatcher(app_config, lambda _path: None)
+    watcher.start(observe=False)
+    try:
+        path = app_config.downloads_dir / "em-curso.pdf"
+        path.write_bytes(b"still arriving")
+        watcher.enqueue(path)
+        assert started.wait(1.0)
+
+        taken = watcher.take_undelivered()
+
+        assert taken == [path]
+        assert watcher.take_undelivered() == []
+    finally:
+        watcher.stop()
+
+
+def test_restarted_watcher_delivers_a_stuck_download(
+    app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = Event()
+
+    def blocked(*_args: object, **kwargs: object) -> bool:
+        started.set()
+        stop_event = kwargs["stop_event"]
+        assert isinstance(stop_event, Event)
+        stop_event.wait(2.0)
+        return False
+
+    monkeypatch.setattr("organizador.watcher.wait_until_stable", blocked)
+    old = DownloadWatcher(app_config, lambda _path: None)
+    old.start(observe=False)
+    path = app_config.downloads_dir / "resgatado.pdf"
+    path.write_bytes(b"queued in the old watcher")
+    old.enqueue(path)
+    assert started.wait(1.0)
+    undelivered = old.take_undelivered()
+    old.stop()
+
+    monkeypatch.setattr("organizador.watcher.wait_until_stable", lambda *_args, **_kwargs: True)
+    delivered: list[Path | ExistingDownload] = []
+    replacement = DownloadWatcher(app_config, delivered.append)
+    replacement.start(observe=False)
+    try:
+        # Simulate the observe=True baseline that strands the file.
+        baseline = replacement._snapshot()
+        assert baseline is not None
+        replacement._known = set(baseline)
+
+        replacement.adopt(undelivered)
+
+        deadline = monotonic() + 3.0
+        while not delivered and monotonic() < deadline:
+            sleep(0.01)
+
+        assert delivered == [path]
+    finally:
+        replacement.stop()
+
+
+def test_settings_restart_keeps_a_stabilizing_download(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from organizador.controller import AppController
+
+    del subject
+    calls = 0
+    started = Event()
+
+    def stabilize(*_args: object, **kwargs: object) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            stop_event = kwargs["stop_event"]
+            assert isinstance(stop_event, Event)
+            stop_event.wait(2.0)
+            return False
+        return True
+
+    monkeypatch.setattr("organizador.watcher.wait_until_stable", stabilize)
+    controller = AppController(app_config)
+    app_config.watch_enabled = False
+    try:
+        controller._restart_watcher()
+        first_watcher = controller.watcher
+        assert first_watcher is not None
+        path = app_config.downloads_dir / "a-caminho.pdf"
+        path.write_bytes(b"stabilizing download" * 10)
+        first_watcher.enqueue(path)
+        assert started.wait(1.0)
+
+        # A settings save restarts the watcher while the file stabilizes.
+        controller._restart_watcher()
+
+        deadline = monotonic() + 10.0
+        while controller.database.count_inbox_items() == 0 and monotonic() < deadline:
+            qt_app.processEvents()
+            sleep(0.01)
+
+        assert controller.database.count_inbox_items() == 1
+    finally:
+        controller._shutdown_transfers()
+        controller.indexer.shutdown()
+        controller.tray.hide()
+        controller.main_window.allow_close = True
+        controller.main_window.close()

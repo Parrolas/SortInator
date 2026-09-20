@@ -217,6 +217,73 @@ def test_zip_import_rejects_a_tampered_database(tmp_path: Path) -> None:
         coordinator.import_bundle_zip(archive)
 
 
+def test_zip_import_rejects_a_database_member_over_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, _database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    database_bytes = (bundle.path / DATABASE_BACKUP_NAME).read_bytes()
+    archive = tmp_path / "exports" / "grande.zip"
+    archive.parent.mkdir()
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.write(bundle.path / MANIFEST_NAME, MANIFEST_NAME)
+        handle.writestr(DATABASE_BACKUP_NAME, database_bytes + b"0" * 4096)
+        handle.write(bundle.path / SETTINGS_BACKUP_NAME, SETTINGS_BACKUP_NAME)
+
+    monkeypatch.setattr(recovery_module, "_MAX_DATABASE_MEMBER_BYTES", 1024)
+
+    with pytest.raises(RecoveryError, match="too large"):
+        coordinator.import_bundle_zip(archive)
+
+    assert not any(path.name.startswith("import-") for path in coordinator.backups_dir.iterdir())
+
+
+def test_zip_import_rejects_a_settings_member_over_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, _database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    archive = tmp_path / "exports" / "grande.zip"
+    archive.parent.mkdir()
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.write(bundle.path / MANIFEST_NAME, MANIFEST_NAME)
+        handle.write(bundle.path / DATABASE_BACKUP_NAME, DATABASE_BACKUP_NAME)
+        handle.writestr(SETTINGS_BACKUP_NAME, b"x" * 4096)
+
+    monkeypatch.setattr(recovery_module, "_MAX_SETTINGS_MEMBER_BYTES", 1024)
+
+    with pytest.raises(RecoveryError, match="too large"):
+        coordinator.import_bundle_zip(archive)
+
+    assert not any(path.name.startswith("import-") for path in coordinator.backups_dir.iterdir())
+
+
+def test_zip_import_enforces_the_total_member_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir, _database = _prepared_data(tmp_path)
+    coordinator = RecoveryCoordinator(data_dir)
+    bundle = coordinator.create_snapshot()
+    database_bytes = (bundle.path / DATABASE_BACKUP_NAME).read_bytes()
+    archive = tmp_path / "exports" / "total.zip"
+    archive.parent.mkdir()
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.write(bundle.path / MANIFEST_NAME, MANIFEST_NAME)
+        handle.writestr(DATABASE_BACKUP_NAME, database_bytes + b"0" * 2048)
+        handle.writestr(SETTINGS_BACKUP_NAME, b"x" * 2048)
+
+    monkeypatch.setattr(recovery_module, "_MAX_DATABASE_MEMBER_BYTES", 8192)
+    monkeypatch.setattr(recovery_module, "_MAX_SETTINGS_MEMBER_BYTES", 8192)
+    monkeypatch.setattr(recovery_module, "_MAX_BUNDLE_MEMBER_BYTES", 3000)
+
+    with pytest.raises(RecoveryError, match="too large"):
+        coordinator.import_bundle_zip(archive)
+
+    assert not any(path.name.startswith("import-") for path in coordinator.backups_dir.iterdir())
+
+
 def test_failed_restore_keeps_the_current_database_and_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -154,33 +154,42 @@ class AppConfig:
     def validate(self) -> None:
         """Reject settings that could cause the watcher to reprocess its own files."""
 
+        # Imported lazily: organizador.i18n depends on this module.
+        from organizador.i18n import _
+
         downloads = _resolve_managed_folder(self.downloads_dir, "Downloads")
         university = _resolve_managed_folder(self.university_root, "Universidade")
         try:
             data_dir = self.data_dir.resolve()
         except (OSError, RuntimeError) as exc:
-            raise ValueError("A pasta de dados da aplicação não pôde ser validada.") from exc
+            raise ValueError(_("A pasta de dados da aplicação não pôde ser validada.")) from exc
         if _paths_overlap(university, downloads):
             raise ValueError(
-                "As pastas Universidade e Downloads não podem coincidir nem "
-                "ficar uma dentro da outra."
+                _(
+                    "As pastas Universidade e Downloads não podem coincidir nem "
+                    "ficar uma dentro da outra."
+                )
             )
         if _paths_overlap(university, data_dir) or _paths_overlap(downloads, data_dir):
             raise ValueError(
-                "As pastas Universidade e Downloads não podem coincidir nem "
-                "ficar dentro da pasta de dados da aplicação."
+                _(
+                    "As pastas Universidade e Downloads não podem coincidir nem "
+                    "ficar dentro da pasta de dados da aplicação."
+                )
             )
         if self.minimum_file_size < 0:
-            raise ValueError("O tamanho mínimo não pode ser negativo.")
+            raise ValueError(_("O tamanho mínimo não pode ser negativo."))
         if self.prompt_timeout_seconds < 10:
-            raise ValueError("O tempo do popup deve ser de pelo menos 10 segundos.")
+            raise ValueError(_("O tempo do popup deve ser de pelo menos 10 segundos."))
         if not 0 <= self.reminder_lead_days <= 30:
-            raise ValueError("O aviso de prazos deve estar entre 0 e 30 dias.")
+            raise ValueError(_("O aviso de prazos deve estar entre 0 e 30 dias."))
         _validate_name_template(self.filename_template)
         if self.theme not in THEME_IDS:
-            raise ValueError(f"O tema escolhido não existe: {self.theme}")
+            raise ValueError(_("O tema escolhido não existe: {theme}").format(theme=self.theme))
         if self.language not in LANGUAGE_IDS:
-            raise ValueError(f"O idioma escolhido não existe: {self.language}")
+            raise ValueError(
+                _("O idioma escolhido não existe: {language}").format(language=self.language)
+            )
 
     def accepts(self, path: Path) -> bool:
         """Return whether a file has an eligible, non-temporary suffix."""
@@ -273,14 +282,21 @@ def _normalise_extension(value: str) -> str:
 
 
 def _resolve_managed_folder(path: Path, label: str) -> Path:
+    # Imported lazily: organizador.i18n depends on this module.
+    from organizador.i18n import _
+
     if not isinstance(path, Path) or not path.is_absolute():
-        raise ValueError(f"A pasta {label} tem de ser um caminho absoluto e não pode estar vazia.")
+        raise ValueError(
+            _("A pasta {label} tem de ser um caminho absoluto e não pode estar vazia.").format(
+                label=label
+            )
+        )
     try:
         resolved = path.resolve()
     except (OSError, RuntimeError) as exc:
-        raise ValueError(f"A pasta {label} não pôde ser validada.") from exc
+        raise ValueError(_("A pasta {label} não pôde ser validada.").format(label=label)) from exc
     if resolved.parent == resolved:
-        raise ValueError(f"A pasta {label} não pode ser a raiz do disco.")
+        raise ValueError(_("A pasta {label} não pode ser a raiz do disco.").format(label=label))
     return resolved
 
 
@@ -316,16 +332,19 @@ def _str_setting(raw: dict[str, Any], key: str, default: str) -> str:
 
 
 def _validate_name_template(template: str) -> None:
+    # Imported lazily: organizador.i18n depends on this module.
+    from organizador.i18n import _
+
     cleaned = template.strip()
     if not cleaned:
-        raise ValueError("O modelo do nome não pode estar vazio.")
+        raise ValueError(_("O modelo do nome não pode estar vazio."))
     if len(cleaned) > 120:
-        raise ValueError("O modelo do nome é demasiado longo (máximo 120 caracteres).")
+        raise ValueError(_("O modelo do nome é demasiado longo (máximo 120 caracteres)."))
     if cleaned.count("{") != cleaned.count("}"):
-        raise ValueError("O modelo do nome tem chaves por fechar.")
+        raise ValueError(_("O modelo do nome tem chaves por fechar."))
     for token in re.findall(r"\{[^{}]*\}", cleaned):
         if token not in NAME_TEMPLATE_TOKENS:
-            raise ValueError(f"Token desconhecido no modelo do nome: {token}")
+            raise ValueError(_("Token desconhecido no modelo do nome: {token}").format(token=token))
 
 
 def _bool_setting(raw: dict[str, Any], key: str, default: bool) -> bool:

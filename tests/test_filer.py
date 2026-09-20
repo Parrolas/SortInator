@@ -201,6 +201,29 @@ def test_non_university_file_returns_without_overwrite(
     assert destination.exists()
 
 
+def test_re_download_of_a_deleted_inbox_file_is_ingested_without_bouncing(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+) -> None:
+    first = filer.ingest(_download(app_config, "repetido.pdf"))
+    assert first is not None
+    first.path.unlink()
+
+    source = _download(app_config, "repetido.pdf")
+    second = filer.ingest(source)
+
+    assert second is not None
+    assert second.id == first.id
+    assert second.path == first.path
+    assert not source.exists()
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id FROM inbox WHERE path = ?", (str(first.path),)
+        ).fetchall()
+    assert [int(row["id"]) for row in rows] == [first.id]
+
+
 def test_ingest_external_moves_a_file_from_anywhere(
     app_config: AppConfig, filer: FilingService, tmp_path: Path
 ) -> None:

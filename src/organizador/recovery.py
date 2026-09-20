@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 import zipfile
 from contextlib import suppress
 from dataclasses import dataclass
@@ -43,6 +44,10 @@ REQUEST_FORMAT_VERSION = 1
 _PROTECTED_MARKERS = (PENDING_MARKER, FAILED_MARKER, QUARANTINED_MARKER)
 _AUTOMATIC_KINDS = ("migration", "pre_restore")
 _MAX_MANIFEST_BYTES = 1024 * 1024
+_MAX_DATABASE_MEMBER_BYTES = 512 * 1024 * 1024
+_MAX_SETTINGS_MEMBER_BYTES = 16 * 1024 * 1024
+_MAX_BUNDLE_MEMBER_BYTES = 1024 * 1024 * 1024
+_TRANSIENT_VALIDATION_ATTEMPTS = 3
 
 
 class RecoveryError(RuntimeError):
@@ -273,7 +278,7 @@ class RecoveryCoordinator:
         ):
             raise RecoveryError("A pending migration backup has conflicting state markers.")
         try:
-            validated = self._validate_bundle(bundle_path)
+            validated = self._validate_bundle_retrying_transient(bundle_path)
         except (DatabaseHealthError, NewerDatabaseError, OSError, RecoveryError, ValueError) as exc:
             self._transition(bundle_path, PENDING_MARKER, QUARANTINED_MARKER)
             raise RecoveryError(f"The pending recovery bundle is not trustworthy: {exc}") from exc
@@ -293,7 +298,7 @@ class RecoveryCoordinator:
         if not pending.is_file() or pending.is_symlink():
             raise RecoveryError("The migration backup is no longer pending.")
         try:
-            self._validate_bundle(bundle_path)
+            self._validate_bundle_retrying_transient(bundle_path)
         except (DatabaseHealthError, NewerDatabaseError, OSError, RecoveryError, ValueError) as exc:
             self._transition(bundle_path, PENDING_MARKER, QUARANTINED_MARKER)
             raise RecoveryError(f"The migration backup is not trustworthy: {exc}") from exc
@@ -302,6 +307,35 @@ class RecoveryCoordinator:
         inspection = Database(self.database_path).inspect_schema()
         if not inspection.is_current:
             raise RecoveryError("The migrated database has not reached the current healthy schema.")
+
+    def restore_update_rollback(self, bundle: RecoveryBundle) -> RecoveryBundle:
+        """Restore the pre-migration snapshot after a failed update handshake.
+
+        Unlike ``restore_pending`` this also accepts a bundle that
+        ``validate_migrated`` already quarantined, so a transient failure
+        while validating the bundle can no longer strand an installation
+        whose migrated data still needs rolling back. The bundle is only
+        transitioned after the live data was replaced successfully; a failed
+        restore leaves its marker untouched for the next attempt.
+        """
+
+        bundle_path = self._owned_bundle_path(bundle.path)
+        pending = bundle_path / PENDING_MARKER
+        quarantined = bundle_path / QUARANTINED_MARKER
+        if (bundle_path / HEALTHY_MARKER).is_file():
+            raise RecoveryError("A healthy migration backup can no longer be restored.")
+        pending_ready = pending.is_file() and not pending.is_symlink()
+        quarantined_ready = quarantined.is_file() and not quarantined.is_symlink()
+        if not pending_ready and not quarantined_ready:
+            raise RecoveryError("The migration backup is no longer restorable.")
+
+        validated = self._validate_bundle_retrying_transient(bundle_path)
+        self._restore_bundle(validated)
+        if pending_ready:
+            self._transition(bundle_path, PENDING_MARKER, FAILED_MARKER)
+        else:
+            self._transition(bundle_path, QUARANTINED_MARKER, FAILED_MARKER)
+        return validated.bundle
 
     def mark_healthy(self, bundle: RecoveryBundle) -> None:
         """Atomically prevent restoration after the application health point."""
@@ -451,8 +485,20 @@ class RecoveryCoordinator:
                 expected = {MANIFEST_NAME, DATABASE_BACKUP_NAME, settings_name}
                 if set(archive_file.namelist()) != expected:
                     raise RecoveryError("The backup archive has unexpected contents.")
-                _copy_zip_member(archive_file, DATABASE_BACKUP_NAME, staging / DATABASE_BACKUP_NAME)
-                _copy_zip_member(archive_file, settings_name, staging / settings_name)
+                database_written = _copy_zip_member(
+                    archive_file,
+                    DATABASE_BACKUP_NAME,
+                    staging / DATABASE_BACKUP_NAME,
+                    limit=_MAX_DATABASE_MEMBER_BYTES,
+                )
+                settings_written = _copy_zip_member(
+                    archive_file,
+                    settings_name,
+                    staging / settings_name,
+                    limit=_MAX_SETTINGS_MEMBER_BYTES,
+                )
+                if database_written + settings_written > _MAX_BUNDLE_MEMBER_BYTES:
+                    raise RecoveryError("The backup archive is too large.")
             validated = self._validate_bundle(staging)
         except BaseException as exc:
             shutil.rmtree(staging, ignore_errors=True)
@@ -647,6 +693,25 @@ class RecoveryCoordinator:
             database_entry=database_entry,
             settings_entry=settings_entry,
         )
+
+    def _validate_bundle_retrying_transient(self, bundle_path: Path) -> _ValidatedBundle:
+        """Retry bundle validation a few times on likely-transient failures.
+
+        Antivirus scans briefly lock freshly written bundle files, which would
+        otherwise quarantine a perfectly good backup. Hash mismatches and
+        newer-schema refusals are deterministic and fail immediately.
+        """
+
+        last_attempt = _TRANSIENT_VALIDATION_ATTEMPTS - 1
+        for attempt in range(_TRANSIENT_VALIDATION_ATTEMPTS):
+            try:
+                return self._validate_bundle(bundle_path)
+            except (DatabaseHealthError, OSError) as exc:
+                if attempt == last_attempt:
+                    raise
+                LOGGER.warning("Transient recovery validation failure (%s); retrying", exc)
+                time.sleep(0.3 * (attempt + 1))
+        raise RecoveryError("The recovery bundle could not be validated.")  # pragma: no cover
 
     def _validate_bundle(self, bundle_path: Path) -> _ValidatedBundle:
         bundle_path = self._owned_bundle_path(bundle_path)
@@ -857,18 +922,34 @@ def _read_zip_member(archive: zipfile.ZipFile, name: str, *, limit: int) -> byte
     return archive.read(name)
 
 
-def _copy_zip_member(archive: zipfile.ZipFile, name: str, destination: Path) -> None:
+def _copy_zip_member(archive: zipfile.ZipFile, name: str, destination: Path, *, limit: int) -> int:
+    """Stream one archive member to disk, refusing oversized or encrypted data.
+
+    The declared ``file_size`` is checked before writing, and the byte count
+    is enforced again while streaming because archive headers can lie.
+    """
+
     info = archive.getinfo(name)
     if info.is_dir():
         raise RecoveryError("A backup archive member is not a file.")
+    if info.flag_bits & 0x1:
+        raise RecoveryError("A backup archive member is encrypted.")
+    if info.file_size > limit:
+        raise RecoveryError("A backup archive member is too large.")
+    written = 0
     try:
         with archive.open(name) as source, destination.open("xb") as target:
-            shutil.copyfileobj(source, target, length=1024 * 1024)
+            while chunk := source.read(1024 * 1024):
+                written += len(chunk)
+                if written > limit:
+                    raise RecoveryError("A backup archive member is too large.")
+                target.write(chunk)
             target.flush()
             os.fsync(target.fileno())
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
+    return written
 
 
 def _sha256_file(path: Path) -> str:
