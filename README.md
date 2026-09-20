@@ -71,6 +71,16 @@ segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidad
 - Vive na área de notificação e pode iniciar com a sessão do Windows.
 - Cinco temas e interface em português, inglês, espanhol ou francês.
 
+**Navegação por teclado**
+
+- `Ctrl+K` abre a paleta de comandos: escreve para filtrar e executa ações como
+  navegar entre páginas, importar de Downloads, pausar ou retomar a vigilância,
+  desfazer a última organização, procurar atualizações, abrir a pasta
+  Universidade ou criar uma cópia de segurança.
+- `Ctrl+F` foca a pesquisa de apontamentos; `Ctrl+1` a `Ctrl+6` abrem as
+  páginas diretamente.
+- No popup de organização, as teclas `1` a `9` escolhem a disciplina.
+
 **Cópias de segurança**
 
 - Cria cópias do catálogo e das definições, exporta-as num `.zip` portátil,
