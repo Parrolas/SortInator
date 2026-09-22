@@ -36,12 +36,12 @@ def main() -> None:
       StringTable(
         '040904B0',
         [StringStruct('CompanyName', 'José Parrolas'),
-         StringStruct('FileDescription', 'Organizador de ficheiros e estudo'),
+         StringStruct('FileDescription', 'SortInator - organização de ficheiros de estudo'),
          StringStruct('FileVersion', '{__version__}'),
-         StringStruct('InternalName', 'Organizador'),
+         StringStruct('InternalName', 'SortInator'),
          StringStruct('LegalCopyright', 'Copyright (c) 2026 José Parrolas'),
-         StringStruct('OriginalFilename', 'Organizador.exe'),
-         StringStruct('ProductName', 'Organizador'),
+         StringStruct('OriginalFilename', 'SortInator.exe'),
+         StringStruct('ProductName', 'SortInator'),
          StringStruct('ProductVersion', '{__version__}')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

@@ -29,7 +29,7 @@ from organizador.recovery import (
 def _prepared_data(tmp_path: Path, name: str = "data") -> tuple[Path, Database]:
     data_dir = tmp_path / name
     data_dir.mkdir()
-    database = Database(data_dir / "organizador.db")
+    database = Database(data_dir / "sortinator.db")
     database.initialize()
     with database.connect() as connection:
         connection.execute(
@@ -129,12 +129,12 @@ def test_restore_bundle_replaces_current_data(tmp_path: Path) -> None:
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    assert _subject_count(data_dir / "organizador.db") == 0
+    assert _subject_count(data_dir / "sortinator.db") == 0
 
     restored = coordinator.restore_bundle(bundle.path)
 
     assert restored.path == bundle.path
-    assert _subject_count(data_dir / "organizador.db") == 1
+    assert _subject_count(data_dir / "sortinator.db") == 1
 
 
 def test_delete_refuses_non_user_bundles(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_zip_export_import_roundtrip(tmp_path: Path) -> None:
 
     coordinator.restore_bundle(imported.path)
 
-    assert _subject_count(data_dir / "organizador.db") == 1
+    assert _subject_count(data_dir / "sortinator.db") == 1
 
 
 def test_zip_import_rejects_foreign_members(tmp_path: Path) -> None:
@@ -296,12 +296,12 @@ def test_failed_restore_keeps_the_current_database_and_settings(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
     original_replace = Path.replace
 
     def failing_replace(self: Path, target: Path) -> Path:
-        if self.name.startswith(".organizador.db.restore-"):
+        if self.name.startswith(".sortinator.db.restore-"):
             raise OSError("disco cheio")
         return original_replace(self, target)
 
@@ -310,9 +310,9 @@ def test_failed_restore_keeps_the_current_database_and_settings(
     with pytest.raises(OSError):
         coordinator.restore_bundle(bundle.path)
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
-    assert _subject_count(data_dir / "organizador.db") == 0
+    assert _subject_count(data_dir / "sortinator.db") == 0
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
 
 
@@ -328,12 +328,12 @@ def test_restore_rolls_back_when_verification_fails_after_the_swap(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
     original_validate = Database.validate_health
 
     def failing_validate(self: Database) -> DatabaseHealth:
-        if self.path == data_dir / "organizador.db":
+        if self.path == data_dir / "sortinator.db":
             raise DatabaseHealthError("quick_check falhou")
         return original_validate(self)
 
@@ -342,7 +342,7 @@ def test_restore_rolls_back_when_verification_fails_after_the_swap(
     with pytest.raises(DatabaseHealthError):
         coordinator.restore_bundle(bundle.path)
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
 
@@ -359,7 +359,7 @@ def test_restore_failure_while_saving_settings_deletes_nothing(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
     original_replace = Path.replace
 
@@ -374,7 +374,7 @@ def test_restore_failure_while_saving_settings_deletes_nothing(
     with pytest.raises(PermissionError):
         coordinator.consume_restore_request()
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
     assert (data_dir / RESTORE_REQUEST_FAILED_NAME).is_file()
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
@@ -392,9 +392,9 @@ def test_restore_failure_while_saving_a_sidecar_restores_the_settings(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
-    sidecar = data_dir / "organizador.db-wal"
+    sidecar = data_dir / "sortinator.db-wal"
     sidecar.write_bytes(b"sidecar")
     original_replace = Path.replace
 
@@ -409,7 +409,7 @@ def test_restore_failure_while_saving_a_sidecar_restores_the_settings(
     with pytest.raises(PermissionError):
         coordinator.consume_restore_request()
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
     assert sidecar.read_bytes() == b"sidecar"
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
@@ -427,9 +427,9 @@ def test_failed_rollback_keeps_the_saved_original_for_recovery(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
-    sidecar = data_dir / "organizador.db-wal"
+    sidecar = data_dir / "sortinator.db-wal"
     sidecar.write_bytes(b"sidecar")
     original_replace = Path.replace
 
@@ -449,7 +449,7 @@ def test_failed_rollback_keeps_the_saved_original_for_recovery(
     with pytest.raises(PermissionError):
         coordinator.consume_restore_request()
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     saved = [
         path
         for path in data_dir.iterdir()
@@ -471,7 +471,7 @@ def test_restore_is_refused_when_the_safety_snapshot_fails(
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     current_settings = (data_dir / "settings.json").read_bytes()
     coordinator.request_restore(bundle.path)
 
@@ -483,7 +483,7 @@ def test_restore_is_refused_when_the_safety_snapshot_fails(
     with pytest.raises(PermissionError):
         coordinator.consume_restore_request()
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert (data_dir / "settings.json").read_bytes() == current_settings
     assert not any(
         path.name.startswith("pre_restore-") for path in coordinator.backups_dir.iterdir()
@@ -507,12 +507,12 @@ def test_restore_skips_the_snapshot_when_the_current_database_is_unusable(
             " VALUES ('Extra', 'EXT', '#123456', '[]', 'EXT - Extra', '2026-01-01')"
         )
         connection.commit()
-    (data_dir / "organizador.db").write_bytes(b"nao e uma base de dados")
+    (data_dir / "sortinator.db").write_bytes(b"nao e uma base de dados")
 
     outcome = coordinator.consume_restore_request()
 
     assert outcome is not None
-    assert _subject_count(data_dir / "organizador.db") == 1
+    assert _subject_count(data_dir / "sortinator.db") == 1
     assert not any(
         path.name.startswith("pre_restore-") for path in coordinator.backups_dir.iterdir()
     )
@@ -540,7 +540,7 @@ def test_backup_with_a_newer_schema_is_rejected_before_the_swap(tmp_path: Path) 
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     with sqlite3.connect(bundle.path / DATABASE_BACKUP_NAME) as connection:
         connection.execute("PRAGMA user_version = 7")
         connection.commit()
@@ -553,7 +553,7 @@ def test_backup_with_a_newer_schema_is_rejected_before_the_swap(tmp_path: Path) 
     with pytest.raises(NewerDatabaseError):
         coordinator.restore_bundle(bundle.path)
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
     assert not any(path.name.endswith(".tmp") for path in data_dir.iterdir())
 
 
@@ -564,13 +564,13 @@ def test_backup_with_a_manifest_version_mismatch_is_rejected(tmp_path: Path) -> 
     with database.connect() as connection:
         connection.execute("DELETE FROM subjects")
         connection.commit()
-    current_database_sha = recovery_module._sha256_file(data_dir / "organizador.db")
+    current_database_sha = recovery_module._sha256_file(data_dir / "sortinator.db")
     _rewrite_bundle_manifest(bundle.path, user_version=5)
 
     with pytest.raises(RecoveryError):
         coordinator.restore_bundle(bundle.path)
 
-    assert recovery_module._sha256_file(data_dir / "organizador.db") == current_database_sha
+    assert recovery_module._sha256_file(data_dir / "sortinator.db") == current_database_sha
 
 
 def test_restore_request_roundtrip_creates_pre_restore_snapshot(tmp_path: Path) -> None:
@@ -589,7 +589,7 @@ def test_restore_request_roundtrip_creates_pre_restore_snapshot(tmp_path: Path) 
 
     assert outcome is not None
     assert outcome.restored_from == bundle.created_at
-    assert _subject_count(data_dir / "organizador.db") == 1
+    assert _subject_count(data_dir / "sortinator.db") == 1
     assert not coordinator.has_restore_request()
     kinds = [info.kind for info in coordinator.list_bundles()]
     assert PRE_RESTORE_MARKER in kinds
@@ -613,4 +613,4 @@ def test_tampered_restore_request_is_quarantined(tmp_path: Path) -> None:
     assert not (data_dir / RESTORE_REQUEST_NAME).exists()
     failed = json.loads((data_dir / RESTORE_REQUEST_FAILED_NAME).read_bytes())
     assert "changed since the request" in failed["error"]
-    assert _subject_count(data_dir / "organizador.db") == 0
+    assert _subject_count(data_dir / "sortinator.db") == 0

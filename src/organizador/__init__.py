@@ -1,3 +1,3 @@
-"""Organizador: local study-file organisation for Windows."""
+"""SortInator: local study-file organisation for Windows."""
 
-__version__ = "0.17.1"
+__version__ = "0.18.0"

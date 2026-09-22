@@ -23,10 +23,16 @@ except ImportError:  # pragma: no cover - Windows is the shipping platform
 LOGGER = logging.getLogger(__name__)
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "Organizador"
-SHORTCUT_NAME = "Organizador.lnk"
-MENU_VERB = "Organizador"
+VALUE_NAME = "SortInator"
+SHORTCUT_NAME = "SortInator.lnk"
+MENU_VERB = "SortInator"
+PROTOCOL_KEY = r"Software\Classes\sortinator"
 MENU_ROOT = r"Software\Classes\SystemFileAssociations"
+# Pre-rename registrations retired by cleanup_legacy_shell_integration().
+LEGACY_VALUE_NAME = "Organizador"
+LEGACY_SHORTCUT_NAME = "Organizador.lnk"
+LEGACY_MENU_VERB = "Organizador"
+LEGACY_PROTOCOL_KEY = r"Software\Classes\organizador"
 _MENU_EXTENSION = re.compile(r"^\.[A-Za-z0-9][A-Za-z0-9._-]{0,40}$")
 
 
@@ -52,7 +58,7 @@ def set_launch_at_login(enabled: bool) -> None:
 
 
 def is_launch_at_login() -> bool:
-    """Return whether the Organizador startup value currently exists."""
+    """Return whether the SortInator startup value currently exists."""
 
     if os.name != "nt" or winreg is None:
         return False
@@ -94,8 +100,9 @@ def refresh_launch_at_login() -> bool:
 def refresh_windows_integration(allowed_extensions: Iterable[str] | None = None) -> bool:
     """Refresh the login entry, Start Menu shortcut and Explorer menu."""
 
-    if os.environ.get("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION") == "1":
+    if os.environ.get("SORTINATOR_DISABLE_WINDOWS_INTEGRATION") == "1":
         return False
+    cleanup_legacy_shell_integration()
     refresh_launch_at_login()
     shortcut_ready = ensure_start_menu_shortcut()
     protocol_ready = register_notification_protocol()
@@ -131,11 +138,11 @@ def register_notification_protocol() -> bool:
     if not getattr(sys, "frozen", False) or winreg is None:
         return False
     try:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\organizador") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Organizador")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, PROTOCOL_KEY) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:SortInator")
             winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
         with winreg.CreateKey(
-            winreg.HKEY_CURRENT_USER, r"Software\Classes\organizador\shell\open\command"
+            winreg.HKEY_CURRENT_USER, PROTOCOL_KEY + r"\shell\open\command"
         ) as key:
             winreg.SetValueEx(
                 key,
@@ -184,7 +191,7 @@ def register_file_context_menu(allowed_extensions: Iterable[str]) -> bool:
             with winreg.CreateKey(
                 winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension)
             ) as key:
-                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, _("Organizar com Organizador"))
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, _("Organizar com SortInator"))
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon)
             with winreg.CreateKey(
                 winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension) + r"\command"
@@ -199,7 +206,7 @@ def register_file_context_menu(allowed_extensions: Iterable[str]) -> bool:
 
 
 def _registered_menu_extensions(command: str) -> set[str]:
-    """Return extensions whose Organizador verb still points at this executable."""
+    """Return extensions whose SortInator verb still points at this executable."""
 
     found: set[str] = set()
     if winreg is None:
@@ -242,6 +249,118 @@ def _remove_menu_extension(extension: str, command: str) -> None:
         winreg.DeleteKey(winreg.HKEY_CURRENT_USER, _menu_extension_verb_path(extension))
 
 
+def _command_executable(command: str) -> Path | None:
+    """Return the executable path a quoted registry command starts with."""
+
+    stripped = command.strip()
+    if not stripped.startswith('"'):
+        return None
+    end = stripped.find('"', 1)
+    if end <= 1:
+        return None
+    try:
+        return Path(stripped[1:end])
+    except (OSError, ValueError):  # pragma: no cover - malformed registry data
+        return None
+
+
+def _targets_this_install(command: str, app_dir: Path) -> bool:
+    """Return whether a registry command points inside our own app folder."""
+
+    executable = _command_executable(command)
+    if executable is None:
+        return False
+    try:
+        parent = executable.resolve(strict=False).parent
+    except (OSError, RuntimeError):
+        return False
+    return os.path.normcase(str(parent)) == os.path.normcase(str(app_dir))
+
+
+def cleanup_legacy_shell_integration() -> None:
+    """Retire pre-rename registrations that point at this installation.
+
+    An over-the-air update renames the executable without running the
+    installer, so the old login value, Start Menu shortcut, protocol key and
+    Explorer verbs must be removed here; the normal refresh on the same
+    startup recreates their replacements. Entries that point at a different
+    installation are left alone.
+    """
+
+    if not getattr(sys, "frozen", False) or winreg is None or os.name != "nt":
+        return
+    app_dir = Path(sys.executable).resolve().parent
+
+    with suppress(OSError):
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            command, _ = winreg.QueryValueEx(key, LEGACY_VALUE_NAME)
+        if _targets_this_install(str(command), app_dir):
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.DeleteValue(key, LEGACY_VALUE_NAME)
+
+    legacy_shortcut = start_menu_shortcut_path().with_name(LEGACY_SHORTCUT_NAME)
+    with suppress(Exception):
+        if legacy_shortcut.is_file():
+            target = shortcut_target(legacy_shortcut)
+            if not target.exists() or _targets_this_install(f'"{target}"', app_dir):
+                legacy_shortcut.unlink()
+
+    with suppress(OSError):
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, LEGACY_PROTOCOL_KEY + r"\shell\open\command"
+        ) as key:
+            command, _ = winreg.QueryValueEx(key, "")
+        if _targets_this_install(str(command), app_dir):
+            for suffix in (r"\shell\open\command", r"\shell\open", r"\shell", ""):
+                with suppress(OSError):
+                    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, LEGACY_PROTOCOL_KEY + suffix)
+
+    for extension in _legacy_menu_extensions(app_dir):
+        _remove_legacy_menu_extension(extension)
+
+
+def _legacy_menu_verb_path(extension: str) -> str:
+    return rf"{MENU_ROOT}\{extension}\shell\{LEGACY_MENU_VERB}"
+
+
+def _legacy_menu_extensions(app_dir: Path) -> set[str]:
+    """Return extensions whose pre-rename verb still points at this install."""
+
+    found: set[str] = set()
+    if winreg is None:
+        return found
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, MENU_ROOT) as root:
+            index = 0
+            while True:
+                try:
+                    extension = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+                if not extension.startswith("."):
+                    continue
+                try:
+                    with winreg.OpenKey(
+                        winreg.HKEY_CURRENT_USER, _legacy_menu_verb_path(extension) + r"\command"
+                    ) as key:
+                        command, _ = winreg.QueryValueEx(key, "")
+                except OSError:
+                    continue
+                if _targets_this_install(str(command), app_dir):
+                    found.add(extension)
+    except OSError:
+        return found
+    return found
+
+
+def _remove_legacy_menu_extension(extension: str) -> None:
+    with suppress(OSError):
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, _legacy_menu_verb_path(extension) + r"\command")
+    with suppress(OSError):
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, _legacy_menu_verb_path(extension))
+
+
 def refresh_installed_version() -> None:
     """Update metadata only when the uninstaller owns this exact runtime folder."""
     if not getattr(sys, "frozen", False) or winreg is None:
@@ -262,19 +381,19 @@ def unregister_windows_integration() -> None:
     """Remove registrations only if they still point to this executable."""
     if not getattr(sys, "frozen", False) or winreg is None:
         return
+    cleanup_legacy_shell_integration()
     expected = f'"{Path(sys.executable)}"'
     with suppress(OSError):
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             command, _ = winreg.QueryValueEx(key, VALUE_NAME)
         if command == expected + " --background":
             set_launch_at_login(False)
-    protocol = r"Software\Classes\organizador"
     with suppress(OSError):
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, protocol + r"\shell\open\command") as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, PROTOCOL_KEY + r"\shell\open\command") as key:
             command, _ = winreg.QueryValueEx(key, "")
         if command == expected + ' --notification-uri "%1"':
             for suffix in (r"\shell\open\command", r"\shell\open", r"\shell", ""):
-                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, protocol + suffix)
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, PROTOCOL_KEY + suffix)
             with suppress(Exception):
                 from winrt.windows.ui.notifications import ToastNotificationManager
 

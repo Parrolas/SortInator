@@ -15,7 +15,7 @@ from organizador.models import FiledDocument
 from organizador.windows_shell import AUMID
 
 LOGGER = logging.getLogger(__name__)
-URI_PATTERN = re.compile(r"organizador://notification/([0-9a-f]{32})\Z")
+URI_PATTERN = re.compile(r"sortinator://notification/([0-9a-f]{32})\Z")
 LIFETIME_SECONDS = 7 * 24 * 60 * 60
 
 
@@ -34,7 +34,7 @@ def save_action(database: Database, documents: list[FiledDocument]) -> str:
             (token, time.time() + LIFETIME_SECONDS, json.dumps(targets)),
         )
         connection.commit()
-    return f"organizador://notification/{token}"
+    return f"sortinator://notification/{token}"
 
 
 def resolve_action(database: Database, uri: str) -> tuple[list[FiledDocument], bool]:

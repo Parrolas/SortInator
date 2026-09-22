@@ -1,6 +1,6 @@
 # Contribuir
 
-Como desenvolver, construir e publicar o Organizador. Para a descrição da
+Como desenvolver, construir e publicar o SortInator. Para a descrição da
 aplicação e as instruções de instalação, vê o [README](README.md).
 
 ## Desenvolvimento
@@ -31,9 +31,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 O script executa lint, verificação de formato, mypy, testes, PyInstaller e um
 arranque de diagnóstico do pacote. Depois adiciona as licenças e produz:
 
-- `artifacts\Organizador\Organizador.exe`
-- `artifacts\releases\Organizador-<versão>-windows-x64.zip`
-- `artifacts\releases\Organizador-<versão>-windows-x64.zip.sha256`
+- `artifacts\SortInator\SortInator.exe`
+- `artifacts\releases\SortInator-<versão>-windows-x64.zip`
+- `artifacts\releases\SortInator-<versão>-windows-x64.zip.sha256`
 
 Para o instalador, o primeiro comando descarrega uma vez um compilador Inno
 Setup fixo e verificado (edição não comercial):
@@ -45,8 +45,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 
 que acrescenta:
 
-- `artifacts\releases\Organizador-<versão>-Setup.exe`
-- `artifacts\releases\Organizador-<versão>-Setup.exe.sha256`
+- `artifacts\releases\SortInator-<versão>-Setup.exe`
+- `artifacts\releases\SortInator-<versão>-Setup.exe.sha256`
 
 O build local não substitui uma cópia já instalada nem altera os ícones
 guardados no código. Usa `-OutputRoot <pasta>` para escolher outra pasta de

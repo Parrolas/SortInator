@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.allow_close = False
         self.quit_on_close = False
-        self.setWindowTitle("Organizador")
+        self.setWindowTitle("SortInator")
         self.setMinimumSize(980, 660)
         self.resize(1180, 760)
 
@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(17, 24, 17, 18)
         sidebar_layout.setSpacing(8)
-        sidebar_layout.addWidget(label(_("Organizador"), "Brand"))
+        sidebar_layout.addWidget(label(_("SortInator"), "Brand"))
         sidebar_layout.addWidget(label(_("estudo local"), "BrandDetail"))
         sidebar_layout.addSpacing(22)
 

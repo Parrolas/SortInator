@@ -78,7 +78,7 @@ def test_native_watcher_ignores_a_file_returned_by_the_app(app_config: AppConfig
     try:
         watcher.set_paused(True)
         returned = app_config.downloads_dir / "not_university.pdf"
-        returned.write_bytes(b"returned by Organizador")
+        returned.write_bytes(b"returned by SortInator")
         watcher.ignore_self_move(returned)
         watcher.set_paused(False)
 
@@ -121,7 +121,7 @@ def test_resume_does_not_requeue_an_ignored_return(
     watcher.start(observe=False)
     try:
         returned = app_config.downloads_dir / "devolvido-em-pausa.pdf"
-        returned.write_bytes(b"returned by Organizador")
+        returned.write_bytes(b"returned by SortInator")
         watcher.set_paused(True)
         watcher.enqueue(returned)
         watcher.ignore_self_move(returned)
@@ -178,7 +178,7 @@ def test_watcher_uses_one_key_for_directory_aliases(
 ) -> None:
     ready = Event()
     candidate = app_config.downloads_dir / "returned.pdf"
-    candidate.write_bytes(b"returned by Organizador")
+    candidate.write_bytes(b"returned by SortInator")
     alias_dir = tmp_path / "downloads-alias"
     alias_path = alias_dir / candidate.name
     original_resolve = Path.resolve

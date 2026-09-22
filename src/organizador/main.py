@@ -17,7 +17,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from organizador import updater
-from organizador.config import APP_NAME, AppConfig, default_data_dir
+from organizador.config import APP_NAME, AppConfig, default_data_dir, migrate_legacy_data_dir
 from organizador.controller import AppController
 from organizador.db import Database, DatabaseHealthError, NewerDatabaseError
 from organizador.i18n import _, set_language
@@ -27,7 +27,7 @@ from organizador.recovery import RecoveryBundle, RecoveryCoordinator, RecoveryEr
 from organizador.startup import refresh_windows_integration, unregister_windows_integration
 from organizador.ui.icons import app_icon
 from organizador.ui.theme import apply_theme, get_theme
-from organizador.windows_shell import AppMutex
+from organizador.windows_shell import AUMID, AppMutex
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class SingleInstance(QObject):
     def __init__(self, data_dir: Path) -> None:
         super().__init__()
         digest = hashlib.sha1(str(data_dir.resolve()).encode("utf-8")).hexdigest()[:12]
-        self.name = f"organizador-{digest}"
+        self.name = f"sortinator-{digest}"
         self.server = QLocalServer(self)
         self.server.newConnection.connect(self._receive)
         self._activation_handler: Callable[[str], None] | None = None
@@ -150,7 +150,9 @@ class SingleInstance(QObject):
 def build_parser() -> argparse.ArgumentParser:
     """Create the small command-line surface used by startup and tests."""
 
-    parser = argparse.ArgumentParser(description="Organizador de ficheiros de estudo")
+    parser = argparse.ArgumentParser(
+        description="SortInator: organização local de ficheiros de estudo"
+    )
     parser.add_argument(
         "--background", action="store_true", help="Arrancar apenas no tabuleiro do sistema"
     )
@@ -274,9 +276,7 @@ def _set_app_user_model_id() -> None:
     if not getattr(sys, "frozen", False):
         return
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            ctypes.c_wchar_p("Parrolas.Organizador")
-        )
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(AUMID))
     except Exception:  # pragma: no cover - cosmetic Windows integration
         LOGGER.warning("Could not set the application user model id", exc_info=True)
 
@@ -296,18 +296,33 @@ def main(argv: list[str] | None = None) -> int:
         config, _error = load_config_safely(arguments.data_dir or default_data_dir())
         return 0 if refresh_windows_integration(config.allowed_extensions) else 1
     target_data_dir = arguments.data_dir or default_data_dir()
-    with suppress(Exception):
-        configure_logging(target_data_dir)
+    # A pre-rename install keeps its data under the old product name; move it
+    # once before anything (including the log) creates the new directory.
+    migration_error: str | None = None
+    if arguments.data_dir is None:
+        migration_error = migrate_legacy_data_dir(target_data_dir)
+    if migration_error is None:
+        with suppress(Exception):
+            configure_logging(target_data_dir)
     if arguments.backup_now is not None:
+        if migration_error is not None:
+            _print_machine(f"ERRO: {migration_error}")
+            return 1
         return run_ondemand_backup(target_data_dir, arguments.backup_now)
     if arguments.restore_from is not None:
+        if migration_error is not None:
+            _print_machine(f"ERRO: {migration_error}")
+            return 1
         return stage_requested_restore(target_data_dir, arguments.restore_from)
     sys.excepthook = log_uncaught_exception
     _set_app_user_model_id()
-    try:
-        configure_logging(target_data_dir)
-    except Exception as exc:
-        logging_error: Exception | None = exc
+    if migration_error is None:
+        try:
+            configure_logging(target_data_dir)
+        except Exception as exc:
+            logging_error: Exception | None = exc
+        else:
+            logging_error = None
     else:
         logging_error = None
     application = QApplication(sys.argv[:1])
@@ -319,6 +334,17 @@ def main(argv: list[str] | None = None) -> int:
         mutex = AppMutex()
         application.aboutToQuit.connect(mutex.close)
 
+    if migration_error is not None:
+        QMessageBox.critical(
+            None,
+            _("Não foi possível atualizar a pasta de dados"),
+            _(
+                "Os dados da versão anterior não puderam ser movidos para a nova pasta. "
+                "Fecha qualquer versão antiga em execução e tenta novamente. "
+                "Nenhum ficheiro foi alterado.\n\n{error}"
+            ).format(error=migration_error),
+        )
+        return 1
     if logging_error is not None:
         QMessageBox.critical(
             None,
@@ -400,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
                 _("Não foi possível restaurar a cópia"),
                 _(
                     "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. "
-                    "Consulta organizador.log antes de tentar novamente.\n\n{error}"
+                    "Consulta sortinator.log antes de tentar novamente.\n\n{error}"
                 ).format(error=exc),
             )
     if restore_outcome is not None:
@@ -430,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
             None,
             _("Versão da base de dados mais recente"),
             _(
-                "Esta base de dados foi criada por uma versão mais recente do Organizador. "
+                "Esta base de dados foi criada por uma versão mais recente do SortInator. "
                 "Abre a versão mais recente da app. Nenhum ficheiro foi alterado."
             ),
         )
@@ -461,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
             _("Não foi possível abrir os dados"),
             _(
                 "A aplicação não conseguiu abrir o catálogo local. "
-                "Consulta organizador.log antes de tentar novamente.\n\n{error}"
+                "Consulta sortinator.log antes de tentar novamente.\n\n{error}"
             ).format(error=exc),
         )
         return 1

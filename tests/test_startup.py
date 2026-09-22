@@ -13,7 +13,7 @@ from organizador import startup
 
 
 def test_shortcut_path_resolution_uses_the_programs_override(tmp_path: Path) -> None:
-    assert startup.start_menu_shortcut_path(tmp_path) == tmp_path / "Organizador.lnk"
+    assert startup.start_menu_shortcut_path(tmp_path) == tmp_path / "SortInator.lnk"
 
 
 def test_ensure_shortcut_skips_source_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -22,7 +22,7 @@ def test_ensure_shortcut_skips_source_runs(tmp_path: Path, monkeypatch: pytest.M
     created = startup.ensure_start_menu_shortcut(tmp_path)
 
     assert created is False
-    assert not (tmp_path / "Organizador.lnk").exists()
+    assert not (tmp_path / "SortInator.lnk").exists()
 
 
 def test_ensure_shortcut_creates_a_real_lnk_file(
@@ -33,7 +33,7 @@ def test_ensure_shortcut_creates_a_real_lnk_file(
     created = startup.ensure_start_menu_shortcut(tmp_path)
 
     assert created is True
-    shortcut = tmp_path / "Organizador.lnk"
+    shortcut = tmp_path / "SortInator.lnk"
     assert shortcut.is_file()
     assert shortcut.read_bytes().startswith(b"\x4c\x00\x00\x00")
 
@@ -42,7 +42,7 @@ def test_ensure_shortcut_refreshes_an_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
-    shortcut = tmp_path / "Organizador.lnk"
+    shortcut = tmp_path / "SortInator.lnk"
     shortcut.write_bytes(b"stale placeholder")
 
     created = startup.ensure_start_menu_shortcut(tmp_path)
@@ -65,8 +65,8 @@ def test_shortcut_failure_is_reported(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_native_shortcut_preserves_unicode_and_notification_identity(tmp_path: Path) -> None:
     from organizador.windows_shell import AUMID, TOAST_CLSID, create_shortcut, shortcut_target
 
-    target = tmp_path / "José's material & notas" / "Organizador.exe"
-    shortcut = tmp_path / "Menu" / "Organizador.lnk"
+    target = tmp_path / "José's material & notas" / "SortInator.exe"
+    shortcut = tmp_path / "Menu" / "SortInator.lnk"
     create_shortcut(target, shortcut)
     assert shortcut_target(shortcut) == target
     pythoncom.CoInitialize()
@@ -98,7 +98,7 @@ def test_refresh_launch_at_login_rewrites_a_stale_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(startup.sys, "frozen", True, raising=False)
-    values = {"Organizador": '"C:\\instalacao-antiga\\Organizador.exe" --background'}
+    values = {"SortInator": '"C:\\instalacao-antiga\\SortInator.exe" --background'}
     written: dict[str, str] = {}
 
     class _FakeKey:
@@ -136,9 +136,9 @@ def test_refresh_launch_at_login_rewrites_a_stale_entry(
     monkeypatch.setattr(startup, "winreg", fake)
 
     assert startup.refresh_launch_at_login() is True
-    assert written["Organizador"] == startup.startup_command()
+    assert written["SortInator"] == startup.startup_command()
 
-    values["Organizador"] = written["Organizador"]
+    values["SortInator"] = written["SortInator"]
     assert startup.refresh_launch_at_login() is False
 
 
@@ -171,7 +171,7 @@ def test_refresh_launch_at_login_keeps_a_disabled_entry_off(
 def test_refresh_windows_integration_refreshes_both_surfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
+    monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
     calls: list[str] = []
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: calls.append("run") or True)
     monkeypatch.setattr(
@@ -186,7 +186,7 @@ def test_refresh_windows_integration_refreshes_both_surfaces(
 def test_isolated_update_suppresses_all_machine_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", "1")
+    monkeypatch.setenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", "1")
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: pytest.fail("registry write"))
     assert startup.refresh_windows_integration() is False
 
@@ -249,9 +249,9 @@ class _FakeRegistry:
 def test_context_menu_command_quotes_the_selected_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(startup.sys, "executable", r"C:\Programa Files\Organizador.exe")
+    monkeypatch.setattr(startup.sys, "executable", r"C:\Programa Files\SortInator.exe")
 
-    assert startup.context_menu_command() == '"C:\\Programa Files\\Organizador.exe" --organize "%1"'
+    assert startup.context_menu_command() == '"C:\\Programa Files\\SortInator.exe" --organize "%1"'
 
 
 def test_context_menu_registers_one_verb_per_extension(
@@ -264,11 +264,11 @@ def test_context_menu_registers_one_verb_per_extension(
     assert startup.register_file_context_menu([".PDF", ".docx", "..\\Run", "invalida"]) is True
 
     command = startup.context_menu_command()
-    verb = f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador"
-    assert fake.keys[verb][""] == "Organizar com Organizador"
+    verb = f"{startup.MENU_ROOT}\\.pdf\\shell\\SortInator"
+    assert fake.keys[verb][""] == "Organizar com SortInator"
     assert fake.keys[verb]["Icon"].endswith(",0")
     assert fake.keys[verb + "\\command"][""] == command
-    assert f"{startup.MENU_ROOT}\\.docx\\shell\\Organizador\\command" in fake.keys
+    assert f"{startup.MENU_ROOT}\\.docx\\shell\\SortInator\\command" in fake.keys
     assert not any("Run" in path for path in fake.keys)
     assert not any("invalida" in path for path in fake.keys)
 
@@ -280,18 +280,18 @@ def test_context_menu_prunes_stale_verbs_only_when_ours(
     fake = _FakeRegistry()
     monkeypatch.setattr(startup, "winreg", fake)
     command = startup.context_menu_command()
-    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador"] = {}
-    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador\\command"] = {"": command}
-    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador"] = {}
-    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"] = {
+    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\SortInator"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.txt\\shell\\SortInator\\command"] = {"": command}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator\\command"] = {
         "": '"outro.exe" --organize "%1"'
     }
 
     assert startup.register_file_context_menu([".pdf"]) is True
 
-    assert f"{startup.MENU_ROOT}\\.txt\\shell\\Organizador" not in fake.keys
-    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador\\command" in fake.keys
-    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"][""] == (
+    assert f"{startup.MENU_ROOT}\\.txt\\shell\\SortInator" not in fake.keys
+    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\SortInator\\command" in fake.keys
+    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator\\command"][""] == (
         '"outro.exe" --organize "%1"'
     )
 
@@ -303,17 +303,17 @@ def test_unregister_removes_only_our_explorer_verbs(
     fake = _FakeRegistry()
     monkeypatch.setattr(startup, "winreg", fake)
     command = startup.context_menu_command()
-    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador"] = {}
-    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador\\command"] = {"": command}
-    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador"] = {}
-    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"] = {
+    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\SortInator"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.pdf\\shell\\SortInator\\command"] = {"": command}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator"] = {}
+    fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator\\command"] = {
         "": '"outro.exe" --organize "%1"'
     }
 
     startup.unregister_windows_integration()
 
-    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\Organizador" not in fake.keys
-    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\Organizador\\command"][""] == (
+    assert f"{startup.MENU_ROOT}\\.pdf\\shell\\SortInator" not in fake.keys
+    assert fake.keys[f"{startup.MENU_ROOT}\\.rtf\\shell\\SortInator\\command"][""] == (
         '"outro.exe" --organize "%1"'
     )
 
@@ -321,7 +321,7 @@ def test_unregister_removes_only_our_explorer_verbs(
 def test_refresh_windows_integration_registers_the_explorer_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
+    monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(startup, "refresh_launch_at_login", lambda: True)
     monkeypatch.setattr(startup, "ensure_start_menu_shortcut", lambda *args, **kwargs: True)

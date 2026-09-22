@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "organizador-estudo"
 dynamic = ["version"]
-description = "Organizador local de ficheiros e estudo para Windows"
+description = "SortInator: organização local de ficheiros de estudo para Windows"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

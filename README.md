@@ -1,4 +1,4 @@
-# Organizador
+# SortInator
 
 Aplicação local para Windows 11 que vigia Downloads, pede a classificação dos
 ficheiros académicos e mantém uma biblioteca pesquisável por disciplina,
@@ -15,7 +15,7 @@ segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidad
 
 ## Vídeo
 
-[![Vídeo de apresentação do Organizador](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
+[![Vídeo de apresentação do SortInator](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
 
 *Vídeo de apresentação — 22 segundos. Clica para ver com música.*
 
@@ -63,7 +63,7 @@ segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidad
 
 **Integração com o Windows**
 
-- Menu de contexto do Explorador: "Organizar com Organizador" para os
+- Menu de contexto do Explorador: "Organizar com SortInator" para os
   ficheiros com as extensões configuradas; "Devolver" repõe-nos na pasta de
   origem.
 - Notificações nativas clicáveis ("Mostrar na pasta") que continuam
@@ -89,7 +89,7 @@ segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidad
 
 ## Proteção dos ficheiros
 
-O Organizador não substitui nem elimina documentos silenciosamente. Aguarda que
+O SortInator não substitui nem elimina documentos silenciosamente. Aguarda que
 um download deixe de ser temporário e permaneça estável, usa nomes alternativos
 como `nome (2).pdf` em caso de colisão e regista cada movimento para permitir
 recuperação depois de uma interrupção. Estados ambíguos ficam visíveis para
@@ -115,29 +115,29 @@ ficam para revisão manual na Caixa de Entrada.
 ## Instalação no Windows
 
 O instalador por utilizador é a forma recomendada. Instala em
-`%LOCALAPPDATA%\Programs\Organizador` sem pedir administrador, cria a entrada
+`%LOCALAPPDATA%\Programs\SortInator` sem pedir administrador, cria a entrada
 no menu Iniciar (e, se quiseres, um atalho no ambiente de trabalho) e aparece
 em **Aplicações instaladas** para desinstalar.
 
 1. Abre a versão pretendida na página
-   [Releases](https://github.com/Parrolas/organizador/releases).
-2. Transfere `Organizador-<versão>-Setup.exe` e o ficheiro `.sha256` com o
+   [Releases](https://github.com/Parrolas/SortInator/releases).
+2. Transfere `SortInator-<versão>-Setup.exe` e o ficheiro `.sha256` com o
    mesmo nome.
 3. Verifica o SHA-256 no PowerShell:
 
    ```powershell
-   Get-FileHash .\Organizador-<versão>-Setup.exe -Algorithm SHA256
-   Get-Content .\Organizador-<versão>-Setup.exe.sha256
+   Get-FileHash .\SortInator-<versão>-Setup.exe -Algorithm SHA256
+   Get-Content .\SortInator-<versão>-Setup.exe.sha256
    ```
 
 4. Confirma que os dois valores são iguais e executa o `Setup.exe`. Fecha o
-   Organizador pelo menu do ícone antes de instalar ou desinstalar.
+   SortInator pelo menu do ícone antes de instalar ou desinstalar.
 
 ### Versão portátil (ZIP)
 
-Também podes usar `Organizador-<versão>-windows-x64.zip`. Verifica o `.sha256`
+Também podes usar `SortInator-<versão>-windows-x64.zip`. Verifica o `.sha256`
 da mesma forma, extrai todo o ZIP para uma pasta permanente e executa
-`Organizador.exe`. Não movas apenas o executável: a pasta `_internal` que o
+`SortInator.exe`. Não movas apenas o executável: a pasta `_internal` que o
 acompanha também é necessária.
 
 O executável ainda não tem assinatura de código. O Microsoft Defender
@@ -171,9 +171,9 @@ catálogo e das definições, exportá-la para um `.zip` portátil (por exemplo,
 para uma pen ou para outra pasta) e restaurá-la mais tarde.
 
 - **Criar cópia agora** cria uma cópia interna em
-  `%LOCALAPPDATA%\Organizador\backups`.
+  `%LOCALAPPDATA%\SortInator\backups`.
 - **Criar e exportar .zip…** cria a cópia e escreve também um ficheiro
-  `Organizador-backup-<data>.zip` na pasta que escolheres.
+  `SortInator-backup-<data>.zip` na pasta que escolheres.
 - **Restaurar…** lista as cópias disponíveis (manuais, anteriores a uma
   atualização e anteriores a uma reposição) e permite importar um `.zip`. A
   reposição valida o manifesto e todos os hashes, cria primeiro uma cópia de
@@ -190,17 +190,17 @@ ser os ficheiros originais.
 
 ## Dados e privacidade
 
-O Organizador trabalha localmente. Não envia ficheiros, nomes, conteúdo ou
+O SortInator trabalha localmente. Não envia ficheiros, nomes, conteúdo ou
 estatísticas para serviços externos; a verificação de atualizações contacta
 apenas o GitHub para ler o número da versão mais recente.
 
-Os dados internos ficam em `%LOCALAPPDATA%\Organizador`:
+Os dados internos ficam em `%LOCALAPPDATA%\SortInator`:
 
 - `settings.json`: definições da aplicação.
-- `organizador.db`: catálogo, histórico e índice de pesquisa SQLite.
+- `sortinator.db`: catálogo, histórico e índice de pesquisa SQLite.
 - `backups\`: cópias de segurança do catálogo e das definições.
 - `updates\`: estado transitório das atualizações.
-- `organizador.log`: diagnóstico local com rotação.
+- `sortinator.log`: diagnóstico local com rotação.
 
 Os documentos continuam na pasta Universidade escolhida pelo utilizador. A
 aplicação nunca usa a base de dados como cópia dos documentos.
@@ -213,7 +213,7 @@ no menu do ícone; um clique transfere, verifica o SHA-256 publicado e a
 versão do pacote, prepara a atualização numa área isolada e só depois reinicia
 para aplicar. Um assistente dedicado espera que a app antiga termine, troca as
 pastas com verificação de cada passo e só confirma quando a nova versão arranca
-com sucesso. Os teus dados ficam sempre em `%LOCALAPPDATA%\Organizador` e nunca
+com sucesso. Os teus dados ficam sempre em `%LOCALAPPDATA%\SortInator` e nunca
 são tocados pela atualização.
 
 A app segue as versões estáveis publicadas. Uma versão prévia (prerelease)
@@ -234,7 +234,7 @@ Antes de atualizar manualmente:
 
 1. Usa **Sair** no ícone da área de notificação.
 2. Cria uma cópia de segurança em **Definições → Cópias de segurança** (ou
-   copia a pasta `%LOCALAPPDATA%\Organizador`).
+   copia a pasta `%LOCALAPPDATA%\SortInator`).
 3. Conserva o Setup/ZIP da versão atual até confirmares a nova versão.
 4. Instala o novo Setup ou extrai a nova versão para uma pasta nova e
    executa-a.
@@ -249,13 +249,13 @@ restaurados.
 
 **Instalador (recomendado):**
 
-1. Em **Definições**, desativa **Iniciar o Organizador quando entro no
+1. Em **Definições**, desativa **Iniciar o SortInator quando entro no
    Windows** e guarda (a desinstalação também limpa esse registo).
 2. Usa **Sair** no ícone da área de notificação.
-3. Em **Aplicações instaladas** do Windows, desinstala **Organizador**.
+3. Em **Aplicações instaladas** do Windows, desinstala **SortInator**.
 
 A desinstalação remove o programa, os atalhos e os registos no Windows, mas
-mantém `%LOCALAPPDATA%\Organizador` para que possas reinstalar sem perder o
+mantém `%LOCALAPPDATA%\SortInator` para que possas reinstalar sem perder o
 catálogo.
 
 **Versão portátil:**
@@ -263,7 +263,7 @@ catálogo.
 1. Usa **Sair** no ícone da área de notificação.
 2. Elimina a pasta onde extraíste a aplicação.
 3. Se também quiseres apagar o catálogo, histórico, definições, cópias e logs,
-   elimina `%LOCALAPPDATA%\Organizador`.
+   elimina `%LOCALAPPDATA%\SortInator`.
 
 Em qualquer dos casos, a desinstalação não elimina a pasta Universidade nem os
 documentos nela guardados.
@@ -302,6 +302,6 @@ problemas concretos antes de escolher a próxima melhoria.
 
 ## Licenças
 
-O código do Organizador é distribuído sob a licença MIT em `LICENSE`. O pacote
+O código do SortInator é distribuído sob a licença MIT em `LICENSE`. O pacote
 Windows inclui componentes de terceiros com licenças próprias, documentados em
 `LICENSES/THIRD-PARTY-NOTICES.md` e nos respetivos textos de licença.

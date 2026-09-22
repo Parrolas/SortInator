@@ -25,7 +25,7 @@ from organizador.recovery import (
 
 def _old_database(data_dir: Path) -> Database:
     data_dir.mkdir(parents=True)
-    database = Database(data_dir / "organizador.db")
+    database = Database(data_dir / "sortinator.db")
     database.initialize()
     with database.connect() as connection:
         connection.execute("PRAGMA user_version = 4")

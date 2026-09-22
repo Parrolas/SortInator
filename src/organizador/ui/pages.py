@@ -1435,7 +1435,7 @@ class SettingsPage(QWidget):
 
         watch_layout, form = section(_("Vigilância e notificações"))
         self.watch_check = ToggleSwitch(_("Vigiar novos ficheiros em Downloads"))
-        self.startup_check = ToggleSwitch(_("Iniciar o Organizador quando entro no Windows"))
+        self.startup_check = ToggleSwitch(_("Iniciar o SortInator quando entro no Windows"))
         self.quiet_check = ToggleSwitch(_("Silenciar notificações de arquivo"))
         self.quiet_check.setToolTip(
             _("Sem avisos de ficheiros organizados; erros e prazos continuam visíveis.")
@@ -1538,7 +1538,7 @@ class SettingsPage(QWidget):
         layout.addLayout(action_row)
         version_label = label(
             _(
-                "Organizador v{version} · código MIT · "
+                "SortInator v{version} · código MIT · "
                 "componentes de terceiros com licenças próprias"
             ).format(version=__version__),
             "Muted",

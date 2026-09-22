@@ -1,6 +1,6 @@
 # Third-party notices
 
-Organizador is distributed under the MIT License. The Windows package also
+SortInator is distributed under the MIT License. The Windows package also
 contains the following independent open-source components. Each component
 remains governed by its own license.
 

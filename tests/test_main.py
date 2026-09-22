@@ -37,7 +37,7 @@ def test_configure_logging_is_idempotent_for_same_path(tmp_path: Path) -> None:
             handler
             for handler in root.handlers
             if isinstance(handler, RotatingFileHandler)
-            and Path(handler.baseFilename).resolve() == (tmp_path / "organizador.log").resolve()
+            and Path(handler.baseFilename).resolve() == (tmp_path / "sortinator.log").resolve()
         ]
         assert len(matching) == 1
         assert matching[0].maxBytes == 1_500_000
@@ -136,7 +136,7 @@ def test_ondemand_backup_and_staged_restore_roundtrip(
 ) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    database = Database(data_dir / "organizador.db")
+    database = Database(data_dir / "sortinator.db")
     database.initialize()
     with database.connect() as connection:
         connection.execute(

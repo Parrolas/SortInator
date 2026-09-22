@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory = $true)][string]$CandidateVersion,
     [string]$LegacyTag = "v0.6.1",
     [string]$LegacyZipName = "Organizador-0.6.1-windows-x64.zip",
-    [string]$Repo = "Parrolas/organizador",
+    [string]$Repo = "Parrolas/SortInator",
     [string]$SandboxRoot = ""
 )
 
@@ -22,7 +22,7 @@ if ([System.IO.Path]::GetPathRoot($SandboxRoot) -eq $SandboxRoot) {
     throw "Refusing to use a filesystem root as the sandbox root"
 }
 $RunId = [guid]::NewGuid().ToString("N")
-$Sandbox = Join-Path $SandboxRoot ("Organizador-E2E-Jose-c-pct-" + $RunId)
+$Sandbox = Join-Path $SandboxRoot ("SortInator-E2E-Jose-c-pct-" + $RunId)
 if (-not $Sandbox.StartsWith($SandboxRoot)) { throw "Refusing to escape the sandbox root" }
 
 $Install = Join-Path $Sandbox "install\Organizador"
@@ -48,6 +48,27 @@ function Fail([string]$Message) {
 
 function Get-ProductVersion([string]$ExePath) {
     return (Get-Item -LiteralPath $ExePath).VersionInfo.ProductVersion
+}
+
+function Get-PayloadExecutable([string]$AppDir) {
+    # Prefer the manifest so renamed executables keep validating.
+    $ManifestPath = Join-Path $AppDir "update-manifest.json"
+    if (Test-Path -LiteralPath $ManifestPath) {
+        try {
+            $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+            $Name = [string]$Manifest.executable
+            if (-not [string]::IsNullOrEmpty($Name)) {
+                $Candidate = Join-Path $AppDir $Name
+                if (Test-Path -LiteralPath $Candidate) { return $Candidate }
+            }
+        }
+        catch { }
+    }
+    foreach ($Fallback in @("SortInator.exe", "Organizador.exe")) {
+        $Candidate = Join-Path $AppDir $Fallback
+        if (Test-Path -LiteralPath $Candidate) { return $Candidate }
+    }
+    throw "No payload executable found under $AppDir"
 }
 
 function Get-SandboxProcessIds {
@@ -90,7 +111,7 @@ function Invoke-LegacyPython([string]$Name, [string]$Code, [hashtable]$ExtraEnv)
             "PYTHONPATH", (Join-Path $LegacySrc "src")
         )
         [System.Environment]::SetEnvironmentVariable("PYTHONNOUSERSITE", "1")
-        [System.Environment]::SetEnvironmentVariable("ORGANIZADOR_E2E_SANDBOX", $Sandbox)
+        [System.Environment]::SetEnvironmentVariable("SORTINATOR_E2E_SANDBOX", $Sandbox)
         foreach ($Key in $ExtraEnv.Keys) { [System.Environment]::SetEnvironmentVariable($Key, $ExtraEnv[$Key]) }
         $Output = & $Python $DriverPath 2>&1
         if ($LASTEXITCODE -ne 0) { Fail ("Legacy python driver $Name failed:`n" + ($Output -join "`n")) }
@@ -103,7 +124,7 @@ function Invoke-LegacyPython([string]$Name, [string]$Code, [hashtable]$ExtraEnv)
 
 $ProvenanceCode = @'
 import os, sys
-sys.path.insert(0, os.path.join(os.environ["ORGANIZADOR_E2E_SANDBOX"], "legacy-src", "src"))
+sys.path.insert(0, os.path.join(os.environ["SORTINATOR_E2E_SANDBOX"], "legacy-src", "src"))
 from organizador import updater as L, __version__
 print(L.__file__)
 print(__version__)
@@ -111,10 +132,10 @@ print(__version__)
 
 $CorruptCode = @'
 import os, sys
-sys.path.insert(0, os.environ["ORGANIZADOR_E2E_SANDBOX"] + "\\legacy-src\\src")
+sys.path.insert(0, os.environ["SORTINATOR_E2E_SANDBOX"] + "\\legacy-src\\src")
 from pathlib import Path
 from organizador import updater as L
-sandbox = Path(os.environ["ORGANIZADOR_E2E_SANDBOX"])
+sandbox = Path(os.environ["SORTINATOR_E2E_SANDBOX"])
 app = sandbox / "install" / "Organizador"
 corrupt = sandbox / "corrupt" / "corrupt.zip"
 sidecar = sandbox / "corrupt" / "corrupt.zip.sha256"
@@ -128,12 +149,12 @@ except Exception as exc:
 
 $PrepareCode = @'
 import os, sys
-sys.path.insert(0, os.environ["ORGANIZADOR_E2E_SANDBOX"] + "\\legacy-src\\src")
+sys.path.insert(0, os.environ["SORTINATOR_E2E_SANDBOX"] + "\\legacy-src\\src")
 from pathlib import Path
 from organizador import updater as L
-sandbox = Path(os.environ["ORGANIZADOR_E2E_SANDBOX"])
+sandbox = Path(os.environ["SORTINATOR_E2E_SANDBOX"])
 app = sandbox / "install" / "Organizador"
-z = L.download_and_verify(os.environ["ORGANIZADOR_E2E_ZIP"], os.environ["ORGANIZADOR_E2E_SHA"], sandbox / "dl")
+z = L.download_and_verify(os.environ["SORTINATOR_E2E_ZIP"], os.environ["SORTINATOR_E2E_SHA"], sandbox / "dl")
 staging = L.extract_to_staging(z, L.staging_directory(app))
 script = L.write_swap_script(app, staging)
 print("SCRIPT:" + str(script))
@@ -141,18 +162,18 @@ print("SCRIPT:" + str(script))
 
 $LaunchCode = @'
 import os, sys
-sys.path.insert(0, os.environ["ORGANIZADOR_E2E_SANDBOX"] + "\\legacy-src\\src")
+sys.path.insert(0, os.environ["SORTINATOR_E2E_SANDBOX"] + "\\legacy-src\\src")
 from pathlib import Path
 from organizador import updater as L
-L.launch_swap(Path(os.environ["ORGANIZADOR_E2E_SCRIPT"]))
+L.launch_swap(Path(os.environ["SORTINATOR_E2E_SCRIPT"]))
 print("LAUNCHED")
 '@
 
 $SentinelCode = @'
 import os, sqlite3
-sandbox = os.environ["ORGANIZADOR_E2E_SANDBOX"]
-action = os.environ.get("ORGANIZADOR_E2E_SENTINEL_ACTION", "")
-db = os.path.join(sandbox, "data-first", "organizador.db")
+sandbox = os.environ["SORTINATOR_E2E_SANDBOX"]
+action = os.environ.get("SORTINATOR_E2E_SENTINEL_ACTION", "")
+db = os.path.join(sandbox, "data-first", "sortinator.db")
 connection = sqlite3.connect(db)
 try:
     if action == "setup":
@@ -186,16 +207,26 @@ try {
     try {
         # Compress-Archive stores backslashes; the extractor normalises them.
         $Names = @($Archive.Entries | ForEach-Object { $_.FullName.Replace("\", "/") })
+        $ManifestEntry = $Archive.Entries |
+            Where-Object { $_.FullName.Replace("\", "/") -eq "update-manifest.json" } |
+            Select-Object -First 1
+        if (-not $ManifestEntry) { Fail "Candidate archive is missing update-manifest.json" }
+        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open())
+        try { $ManifestText = $Reader.ReadToEnd() } finally { $Reader.Dispose() }
     }
     finally {
         $Archive.Dispose()
     }
-    foreach ($Required in @("Organizador.exe", "_internal/", "update-manifest.json")) {
-        if (-not ($Names | Where-Object { $_ -eq $Required -or $_.StartsWith($Required) })) {
-            Fail "Candidate archive is missing $Required"
-        }
+    $ExecutableName = $null
+    try { $ExecutableName = [string](($ManifestText | ConvertFrom-Json).executable) } catch { }
+    if ([string]::IsNullOrEmpty($ExecutableName)) { Fail "Candidate manifest has no executable name" }
+    if (-not ($Names -contains $ExecutableName)) {
+        Fail "Candidate archive is missing $ExecutableName"
     }
-    if ($Names | Where-Object { $_ -like "*/Organizador.exe" }) {
+    if (-not ($Names | Where-Object { $_ -eq "_internal/" -or $_.StartsWith("_internal/") })) {
+        Fail "Candidate archive is missing _internal/"
+    }
+    if ($Names | Where-Object { $_ -like "*/$ExecutableName" }) {
         Fail "Candidate archive must stay flat (exe at the root)"
     }
 
@@ -263,8 +294,8 @@ try {
     if (-not (Test-Path -LiteralPath $CandidateSha)) { Fail "Candidate checksum sidecar is missing" }
     $OldExe = Start-Process -FilePath (Join-Path $Install "Organizador.exe") -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -PassThru
     $PrepareOut = Invoke-LegacyPython "prepare" $PrepareCode @{
-        "ORGANIZADOR_E2E_ZIP" = ([System.Uri]$CandidateZip).AbsoluteUri
-        "ORGANIZADOR_E2E_SHA" = ([System.Uri]$CandidateSha).AbsoluteUri
+        "SORTINATOR_E2E_ZIP" = ([System.Uri]$CandidateZip).AbsoluteUri
+        "SORTINATOR_E2E_SHA" = ([System.Uri]$CandidateSha).AbsoluteUri
     }
     $ScriptLine = ($PrepareOut -split "`n" | Where-Object { $_ -like "SCRIPT:*" } | Select-Object -First 1)
     if (-not $ScriptLine) { Fail "Legacy preparation produced no swap script" }
@@ -283,21 +314,21 @@ try {
     )
     $SavedLocal = $env:LOCALAPPDATA
     $SavedRoaming = $env:APPDATA
-    $SavedIntegration = $env:ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION
+    $SavedIntegration = $env:SORTINATOR_DISABLE_WINDOWS_INTEGRATION
     $env:LOCALAPPDATA = $FakeLocal
     $env:APPDATA = $FakeRoaming
-    $env:ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION = "1"
+    $env:SORTINATOR_DISABLE_WINDOWS_INTEGRATION = "1"
     try {
-        $LaunchOut = Invoke-LegacyPython "launch" $LaunchCode @{ "ORGANIZADOR_E2E_SCRIPT" = $SwapScript }
+        $LaunchOut = Invoke-LegacyPython "launch" $LaunchCode @{ "SORTINATOR_E2E_SCRIPT" = $SwapScript }
     }
     finally {
         $env:LOCALAPPDATA = $SavedLocal
         $env:APPDATA = $SavedRoaming
-        $env:ORGANIZADOR_DISABLE_WINDOWS_INTEGRATION = $SavedIntegration
+        $env:SORTINATOR_DISABLE_WINDOWS_INTEGRATION = $SavedIntegration
     }
     Write-Evidence $LaunchOut
 
-    Wait-ForCondition { (Get-ProductVersion (Join-Path $Install "Organizador.exe")) -eq $CandidateVersion } 60 "active exe becoming $CandidateVersion"
+    Wait-ForCondition { (Get-ProductVersion (Get-PayloadExecutable $Install)) -eq $CandidateVersion } 60 "active exe becoming $CandidateVersion"
     $OldDir = Join-Path $Sandbox "install\Organizador.old"
     Wait-ForCondition { Test-Path -LiteralPath (Join-Path $OldDir "Organizador.exe") } 20 "rollback folder"
     if ((Get-ProductVersion (Join-Path $OldDir "Organizador.exe")) -ne "0.6.1") {
@@ -328,7 +359,7 @@ try {
     if ($Alive.Count -gt 0) { Fail ("Candidate did not shut down: " + ($Alive -join ",")) }
 
     Write-Evidence "Candidate smoke run"
-    $CandidateSmoke = Start-Process -FilePath (Join-Path $Install "Organizador.exe") -ArgumentList ('--smoke-test --data-dir "' + $SmokeData + '"') -WindowStyle Hidden -Wait -PassThru
+    $CandidateSmoke = Start-Process -FilePath (Get-PayloadExecutable $Install) -ArgumentList ('--smoke-test --data-dir "' + $SmokeData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($CandidateSmoke.ExitCode -ne 0) { Fail "Candidate smoke run failed" }
 
     $Sentinel = Get-Content -LiteralPath (Join-Path $FakeLocal "Organizador\sentinel.txt") -Raw
@@ -336,12 +367,14 @@ try {
 
     # 8. On-demand backup and staged restore through the candidate CLI.
     Write-Evidence "Backup and restore gate"
-    $FirstDatabase = Join-Path $FirstData "organizador.db"
+    $CandidateExe = Get-PayloadExecutable $Install
+    $InitRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
+    if ($InitRun.ExitCode -ne 0) { Fail "Candidate profile initialisation failed" }
+    $FirstDatabase = Join-Path $FirstData "sortinator.db"
     if (-not (Test-Path -LiteralPath $FirstDatabase)) { Fail "Expected profile database is missing" }
     $BackupExport = Join-Path $Sandbox "backup-export"
     New-Item -ItemType Directory -Path $BackupExport -Force | Out-Null
-    $CandidateExe = Join-Path $Install "Organizador.exe"
-    Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "setup" } | Out-Null
+    Invoke-LegacyPython "sentinel" $SentinelCode @{ "SORTINATOR_E2E_SENTINEL_ACTION" = "setup" } | Out-Null
 
     $BackupRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--backup-now "' + $BackupExport + '" --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($BackupRun.ExitCode -ne 0) { Fail ("Backup failed with exit code " + $BackupRun.ExitCode) }
@@ -349,7 +382,7 @@ try {
     if ($null -eq $BackupZip) { Fail "Backup produced no archive" }
     Write-Evidence ("Backup archive: " + $BackupZip.Name)
 
-    Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "drop" } | Out-Null
+    Invoke-LegacyPython "sentinel" $SentinelCode @{ "SORTINATOR_E2E_SENTINEL_ACTION" = "drop" } | Out-Null
     $RestoreRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--restore-from "' + $BackupZip.FullName + '" --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($RestoreRun.ExitCode -ne 0) { Fail ("Restore staging failed with exit code " + $RestoreRun.ExitCode) }
     if (-not (Test-Path -LiteralPath (Join-Path $FirstData "restore-request.json"))) {
@@ -359,7 +392,7 @@ try {
     $RestoreSmoke = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($RestoreSmoke.ExitCode -ne 0) { Fail "Restore startup run failed" }
 
-    $SentinelCheck = Invoke-LegacyPython "sentinel" $SentinelCode @{ "ORGANIZADOR_E2E_SENTINEL_ACTION" = "check" }
+    $SentinelCheck = Invoke-LegacyPython "sentinel" $SentinelCode @{ "SORTINATOR_E2E_SENTINEL_ACTION" = "check" }
     if (($SentinelCheck -join "`n") -notmatch "SENTINEL:antes") {
         Fail "Restore did not recover the sentinel data"
     }

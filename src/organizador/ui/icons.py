@@ -28,7 +28,7 @@ def _asset_path(name: str) -> Path | None:
 
 
 def app_icon(size: int = 64) -> QIcon:
-    """Return the Organizador mark, falling back to the drawn tile without assets."""
+    """Return the SortInator mark, falling back to the drawn tile without assets."""
 
     logo = _asset_path("icon-square.png")
     if logo is not None:

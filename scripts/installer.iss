@@ -7,24 +7,24 @@
 #endif
 
 [Setup]
-AppId=Organizador
-AppName=Organizador
+AppId=SortInator
+AppName=SortInator
 AppVersion={#AppVersion}
 AppPublisher=José Parrolas
-AppPublisherURL=https://github.com/Parrolas/organizador
-DefaultDirName={localappdata}\Programs\Organizador
+AppPublisherURL=https://github.com/Parrolas/SortInator
+DefaultDirName={localappdata}\Programs\SortInator
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19041
-AppMutex=Local\Parrolas.Organizador.Running
+AppMutex=Local\Parrolas.SortInator.Running
 CloseApplications=no
 RestartApplications=no
-UninstallDisplayIcon={app}\app\Organizador.exe
+UninstallDisplayIcon={app}\app\SortInator.exe
 OutputDir={#OutputDir}
-OutputBaseFilename=Organizador-{#AppVersion}-Setup
+OutputBaseFilename=SortInator-{#AppVersion}-Setup
 SetupIconFile={#PayloadDir}\_internal\assets\icon.ico
 Compression=lzma2
 SolidCompression=yes
@@ -47,15 +47,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 Source: "{#PayloadDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Organizador"; Filename: "{app}\app\Organizador.exe"; AppUserModelID: "Parrolas.Organizador"
-Name: "{autodesktop}\Organizador"; Filename: "{app}\app\Organizador.exe"; Tasks: desktopicon
+Name: "{autoprograms}\SortInator"; Filename: "{app}\app\SortInator.exe"; AppUserModelID: "Parrolas.SortInator"
+Name: "{autodesktop}\SortInator"; Filename: "{app}\app\SortInator.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\app\Organizador.exe"; Parameters: "--register-integration"; Flags: runhidden waituntilterminated
-Filename: "{app}\app\Organizador.exe"; Description: "{cm:LaunchProgram,Organizador}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\app\SortInator.exe"; Parameters: "--register-integration"; Flags: runhidden waituntilterminated
+Filename: "{app}\app\SortInator.exe"; Description: "{cm:LaunchProgram,SortInator}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{app}\app\Organizador.exe"; Parameters: "--unregister-integration"; RunOnceId: "UnregisterIntegration"; Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\app\SortInator.exe"; Parameters: "--unregister-integration"; RunOnceId: "UnregisterIntegration"; Flags: runhidden waituntilterminated skipifdoesntexist
 
 [Code]
 var
@@ -67,7 +67,7 @@ var
   PreviousNumber, CandidateNumber: Int64;
 begin
   Result := True;
-  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Organizador_is1', 'DisplayVersion', ExistingVersion) then
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\SortInator_is1', 'DisplayVersion', ExistingVersion) then
     if StrToVersion(ExistingVersion, PreviousNumber) and
        StrToVersion('{#AppVersion}', CandidateNumber) and
        (ComparePackedVersion(PreviousNumber, CandidateNumber) > 0) then
@@ -113,7 +113,7 @@ begin
 end;
 
 [CustomMessages]
-portuguese.NewerInstalled=Já está instalada uma versão mais recente do Organizador.
-english.NewerInstalled=A newer version of Organizador is already installed.
-spanish.NewerInstalled=Ya hay instalada una versión más reciente de Organizador.
-french.NewerInstalled=Une version plus récente d'Organizador est déjà installée.
+portuguese.NewerInstalled=Já está instalada uma versão mais recente do SortInator.
+english.NewerInstalled=A newer version of SortInator is already installed.
+spanish.NewerInstalled=Ya hay instalada una versión más reciente de SortInator.
+french.NewerInstalled=Une version plus récente de SortInator est déjà installée.

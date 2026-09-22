@@ -1,4 +1,4 @@
-# Organizador Design System
+# SortInator Design System
 
 ## Direction
 

@@ -5,7 +5,7 @@ packaged smoke test. Installation into your daily-use folder is a separate step;
 the development build does not replace it automatically.
 
 Before switching versions, exit the app normally and back up
-`%LOCALAPPDATA%\Organizador`. Keep your existing installation available. Use
+`%LOCALAPPDATA%\SortInator`. Keep your existing installation available. Use
 copies of coursework for any intentional interruption tests.
 
 ## Once before starting

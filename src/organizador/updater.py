@@ -38,7 +38,7 @@ from organizador.i18n import _
 
 LOGGER = logging.getLogger(__name__)
 
-RELEASES_API = "https://api.github.com/repos/Parrolas/organizador/releases/latest"
+RELEASES_API = "https://api.github.com/repos/Parrolas/SortInator/releases/latest"
 REQUEST_TIMEOUT = 10.0
 DOWNLOAD_TIMEOUT = 60.0
 MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
@@ -280,12 +280,37 @@ def version_tuple(tag: str) -> Version | None:
     return major, minor, patch
 
 
+def _packaged_executable(app_dir: Path) -> Path | None:
+    """Resolve the packaged executable, preferring the update manifest.
+
+    The manifest records the executable name for the payload, so a renamed
+    build keeps updating correctly instead of relying on a hardcoded name.
+    """
+
+    manifest_path = app_dir / "update-manifest.json"
+    if manifest_path.is_file():
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            payload = None
+        if isinstance(payload, dict):
+            name = payload.get("executable")
+            if isinstance(name, str) and name:
+                candidate = app_dir / name
+                if candidate.is_file():
+                    return candidate
+    fallback = app_dir / "SortInator.exe"
+    if fallback.is_file():
+        return fallback
+    return None
+
+
 def validate_app_directory(candidate: Path) -> Path:
     """Validate a complete packaged app without constraining its folder name."""
 
     resolved = candidate.resolve()
-    if not (resolved / "Organizador.exe").is_file() or not (resolved / "_internal").is_dir():
-        raise UpdaterError(_("A pasta não contém uma instalação completa do Organizador."))
+    if _packaged_executable(resolved) is None or not (resolved / "_internal").is_dir():
+        raise UpdaterError(_("A pasta não contém uma instalação completa do SortInator."))
     return resolved
 
 
@@ -326,7 +351,7 @@ def check_latest_release(*, current_version: str = __version__) -> UpdateCheckRe
         RELEASES_API,
         headers={
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Organizador",
+            "User-Agent": "SortInator",
         },
     )
     try:
@@ -347,7 +372,7 @@ def check_latest_release(*, current_version: str = __version__) -> UpdateCheckRe
         return UpdateCheckResult(UpdateCheckStatus.NO_UPDATE)
 
     version_text = ".".join(str(part) for part in remote)
-    zip_name = f"Organizador-{version_text}-windows-x64.zip"
+    zip_name = f"SortInator-{version_text}-windows-x64.zip"
     sha_name = f"{zip_name}.sha256"
     assets = payload.get("assets")
     if not isinstance(assets, list):
@@ -384,7 +409,7 @@ def fetch_latest_release() -> UpdateInfo | None:
 
 
 def _download_to_path(url: str, path: Path, *, timeout: float, limit: int) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "Organizador"})
+    request = urllib.request.Request(url, headers={"User-Agent": "SortInator"})
     written = 0
     with urllib.request.urlopen(request, timeout=timeout) as response, path.open("xb") as handle:
         while chunk := response.read(1024 * 1024):
@@ -398,7 +423,7 @@ def download_and_verify(download_url: str, sha256_url: str, destination_dir: Pat
     """Download the release ZIP and discard it unless its SHA-256 matches."""
 
     destination_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = destination_dir / "organizador-update.zip"
+    zip_path = destination_dir / "sortinator-update.zip"
     part_path = destination_dir / f".{zip_path.name}.{uuid.uuid4().hex}.part"
     zip_path.unlink(missing_ok=True)
     try:
@@ -419,7 +444,7 @@ def download_and_verify(download_url: str, sha256_url: str, destination_dir: Pat
         ) from exc
 
     try:
-        request = urllib.request.Request(sha256_url, headers={"User-Agent": "Organizador"})
+        request = urllib.request.Request(sha256_url, headers={"User-Agent": "SortInator"})
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
             checksum_bytes = response.read(MAX_CHECKSUM_BYTES + 1)
         if len(checksum_bytes) > MAX_CHECKSUM_BYTES:
@@ -1165,7 +1190,10 @@ def _authorized_transaction(manifest_path: Path, token: str) -> UpdateTransactio
 
 
 def _target_executable(transaction: UpdateTransaction) -> Path:
-    return transaction.app_dir / "Organizador.exe"
+    executable = _packaged_executable(transaction.app_dir)
+    if executable is None:
+        raise UpdaterError("the application executable is missing")
+    return executable
 
 
 def _write_marker(path: Path, transaction: UpdateTransaction, *, pid: int | None = None) -> None:
@@ -1462,11 +1490,28 @@ function Restore-PreviousVersion {
     }
 }
 
+function Get-AppExecutable([string]$AppPath) {
+    # Prefer the manifest so a renamed executable keeps working across updates.
+    $manifestPath = Join-Path $AppPath 'update-manifest.json'
+    if ([IO.File]::Exists($manifestPath)) {
+        try {
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $name = [string]$manifest.executable
+            if (-not [string]::IsNullOrEmpty($name)) {
+                $candidate = Join-Path $AppPath $name
+                if ([IO.File]::Exists($candidate)) { return $candidate }
+            }
+        } catch { }
+    }
+    $fallback = Join-Path $AppPath 'SortInator.exe'
+    if ([IO.File]::Exists($fallback)) { return $fallback }
+    throw 'application executable is missing'
+}
+
 function Start-RestoredApp {
     # Plain normal launch (no update arguments): the restored application
     # recovers its own pending migration bundle on startup, if one exists.
-    $restoredExe = Join-Path ([string]$script:Transaction.app_dir) 'Organizador.exe'
-    if (-not [IO.File]::Exists($restoredExe)) { throw 'restored executable is missing' }
+    $restoredExe = Get-AppExecutable ([string]$script:Transaction.app_dir)
     $relaunchArgs = New-Object Collections.Generic.List[string]
     [void]$relaunchArgs.Add('--background')
     if ($null -ne $script:Transaction.data_dir -and -not [string]::IsNullOrEmpty([string]$script:Transaction.data_dir)) {
@@ -1569,8 +1614,7 @@ try {
     $script:StagingMoved = $true
 
     $script:Phase = 'launch_target'
-    $executable = Join-Path $appPath 'Organizador.exe'
-    if (-not [IO.File]::Exists($executable)) { throw 'updated executable is missing' }
+    $executable = Get-AppExecutable $appPath
     $arguments = New-Object Collections.Generic.List[string]
     [void]$arguments.Add('--background')
     if ($null -ne $script:Transaction.data_dir -and -not [string]::IsNullOrEmpty([string]$script:Transaction.data_dir)) {
@@ -1798,6 +1842,6 @@ def cleanup_previous_version(app_dir: Path) -> None:
 def download_temp_directory() -> Path:
     """Return the per-session folder used for the verified ZIP."""
 
-    folder = Path(tempfile.gettempdir()) / "organizador-update"
+    folder = Path(tempfile.gettempdir()) / "sortinator-update"
     folder.mkdir(parents=True, exist_ok=True)
     return folder

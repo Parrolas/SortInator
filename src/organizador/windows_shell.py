@@ -5,10 +5,10 @@ from __future__ import annotations
 import ctypes
 from pathlib import Path
 
-AUMID = "Parrolas.Organizador"
+AUMID = "Parrolas.SortInator"
 TOAST_CLSID = "{B6886E9C-F2BF-46C0-8C4B-2B157B393D4F}"
-APP_MUTEX = "Local\\Parrolas.Organizador.Running"
-UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Organizador_is1"
+APP_MUTEX = "Local\\Parrolas.SortInator.Running"
+UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SortInator_is1"
 
 
 class AppMutex:
@@ -46,7 +46,7 @@ def create_shortcut(target: Path, shortcut: Path) -> None:
         link.SetPath(str(target))
         link.SetWorkingDirectory(str(target.parent))
         link.SetIconLocation(str(target), 0)
-        link.SetDescription("Organizador - estudo local")
+        link.SetDescription("SortInator - estudo local")
         properties = link.QueryInterface(propsys.IID_IPropertyStore)
         properties.SetValue(
             propsys.PSGetPropertyKeyFromName("System.AppUserModel.ID"),

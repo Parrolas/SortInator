@@ -1,6 +1,25 @@
 # Changelog
 
-All notable changes to Organizador are recorded here.
+All notable changes to SortInator are recorded here.
+
+## 0.18.0 - 2026-09-20
+
+### Changed
+
+- **The app is now SortInator.** The product, installer, executable, Start
+  Menu shortcut, notification identity, Explorer menu, data files and release
+  assets all use the new name. Existing installations keep their data: on the
+  first launch of the renamed version the data directory moves from
+  `%LOCALAPPDATA%\Organizador` to `%LOCALAPPDATA%\SortInator` (with a
+  compatibility junction left at the old path, so a binary rollback still
+  finds it), the database and log files are renamed inside it, and pre-rename
+  shell registrations are retired automatically.
+- Over-the-air updates from releases before the rename keep working: the
+  package still exposes the previous executable name as a hardlink for one
+  release, and update helpers resolve the payload executable from its
+  manifest instead of a hardcoded name.
+- The repository moved to https://github.com/Parrolas/SortInator (old links
+  redirect).
 
 ## 0.17.1 - 2026-09-20
 

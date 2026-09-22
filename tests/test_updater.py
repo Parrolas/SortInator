@@ -45,7 +45,7 @@ class _FakeResponse:
 
 def _make_app_layout(path: Path, *, executable: bytes = b"app binary") -> Path:
     path.mkdir(parents=True)
-    (path / "Organizador.exe").write_bytes(executable)
+    (path / "SortInator.exe").write_bytes(executable)
     (path / "_internal").mkdir()
     (path / "_internal" / "placeholder.txt").write_text("internal", encoding="utf-8")
     return path
@@ -57,7 +57,7 @@ def _make_zip_bytes(
     extra_infos: list[tuple[zipfile.ZipInfo, bytes]] | None = None,
 ) -> bytes:
     files = members or {
-        "Organizador.exe": b"app binary",
+        "SortInator.exe": b"app binary",
         "_internal/placeholder.txt": b"internal data",
     }
     buffer = io.BytesIO()
@@ -74,7 +74,7 @@ def _fake_release(
     *,
     assets: list[dict[str, object]] | None = None,
 ) -> bytes:
-    archive_name = f"Organizador-{version}-windows-x64.zip"
+    archive_name = f"SortInator-{version}-windows-x64.zip"
     release_assets = assets
     if release_assets is None:
         release_assets = [
@@ -122,7 +122,7 @@ def test_typed_check_result_returns_exact_versioned_asset_pair(
 ) -> None:
     version = _newer_version()
     decoy = {
-        "name": "Organizador-99.99.99-windows-x64.zip",
+        "name": "SortInator-99.99.99-windows-x64.zip",
         "browser_download_url": "https://example.invalid/decoy.zip",
     }
     payload = json.loads(_fake_release(version))
@@ -140,7 +140,7 @@ def test_typed_check_result_returns_exact_versioned_asset_pair(
     assert result.update is not None
     assert result.info is result.update
     assert result.update.version == tuple(int(part) for part in version.split("."))
-    assert result.update.zip_url.endswith(f"Organizador-{version}-windows-x64.zip")
+    assert result.update.zip_url.endswith(f"SortInator-{version}-windows-x64.zip")
     assert updater.fetch_latest_release() == result.update
 
 
@@ -179,11 +179,11 @@ def test_typed_check_result_distinguishes_no_update_from_network_error(
                 "99.0.0",
                 assets=[
                     {
-                        "name": "Organizador-v99.0.0-windows-x64.zip",
+                        "name": "SortInator-v99.0.0-windows-x64.zip",
                         "browser_download_url": "https://example.invalid/wrong.zip",
                     },
                     {
-                        "name": "Organizador-v99.0.0-windows-x64.zip.sha256",
+                        "name": "SortInator-v99.0.0-windows-x64.zip.sha256",
                         "browser_download_url": "https://example.invalid/wrong.sha256",
                     },
                 ],
@@ -259,7 +259,7 @@ def test_download_and_verify_rejects_bad_or_mispaired_checksum(
             "https://example.invalid/app.zip.sha256",
             tmp_path,
         )
-    assert not (tmp_path / "organizador-update.zip").exists()
+    assert not (tmp_path / "sortinator-update.zip").exists()
     assert list(tmp_path.glob("*.part")) == []
 
 
@@ -283,7 +283,7 @@ def test_extract_to_staging_accepts_unicode_spaces_and_percent_paths(tmp_path: P
     zip_path.write_bytes(
         _make_zip_bytes(
             {
-                "Organizador.exe": b"new app",
+                "SortInator.exe": b"new app",
                 "_internal/pasta % espaço/ação.txt": "conteúdo".encode(),
             }
         )
@@ -335,7 +335,7 @@ def test_extract_rejects_symlinks_and_case_collisions(tmp_path: Path) -> None:
     collision_zip.write_bytes(
         _make_zip_bytes(
             {
-                "Organizador.exe": b"app",
+                "SortInator.exe": b"app",
                 "_internal/A.txt": b"first",
                 "_internal/a.TXT": b"second",
             }
@@ -366,7 +366,7 @@ def test_extract_enforces_member_file_and_total_limits(
 
 def test_extract_removes_invalid_layout(tmp_path: Path) -> None:
     zip_path = tmp_path / "incomplete.zip"
-    zip_path.write_bytes(_make_zip_bytes({"Organizador.exe": b"app"}))
+    zip_path.write_bytes(_make_zip_bytes({"SortInator.exe": b"app"}))
     staging = tmp_path / "staging"
     with pytest.raises(UpdaterError, match="instalação completa"):
         updater.extract_to_staging(zip_path, staging)
@@ -378,11 +378,11 @@ def test_app_directory_validates_layout_without_requiring_folder_name(
     app_dir: Path,
 ) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", str(app_dir / "Organizador.exe"))
+    monkeypatch.setattr(sys, "executable", str(app_dir / "SortInator.exe"))
     assert updater.app_directory() == app_dir.resolve()
     assert updater.validate_app_directory(app_dir) == app_dir.resolve()
 
-    (app_dir / "Organizador.exe").unlink()
+    (app_dir / "SortInator.exe").unlink()
     assert updater.app_directory() is None
     with pytest.raises(UpdaterError, match="instalação completa"):
         updater.validate_app_directory(app_dir)
@@ -636,7 +636,7 @@ def test_legacy_controller_wrappers_remain_callable(
 ) -> None:
     legacy_staging = _make_app_layout(app_dir.parent / "Organizador.update", executable=b"new")
     data_dir = tmp_path / "Dados % ç com espaços"
-    monkeypatch.setattr(sys, "argv", ["Organizador.exe", "--data-dir", str(data_dir)])
+    monkeypatch.setattr(sys, "argv", ["SortInator.exe", "--data-dir", str(data_dir)])
     helper = updater.write_swap_script(app_dir, legacy_staging)
     transaction = updater.read_update_transaction(helper.parent / "transaction.json")
     try:
@@ -743,7 +743,7 @@ def sleeping_executable(tmp_path_factory: pytest.TempPathFactory) -> Path:
         pytest.skip("Windows PowerShell is required for the helper integration tests")
     build_dir = tmp_path_factory.mktemp("updater-helper-target")
     source = build_dir / "Target.cs"
-    executable = build_dir / "Organizador.exe"
+    executable = build_dir / "SortInator.exe"
     source.write_text(
         """
 using System;
@@ -936,7 +936,7 @@ def test_real_powershell_helper_rolls_back_when_ready_never_arrives(
         assert result.committed is False
         assert result.rollback_succeeded is True
         assert "ready" in (result.error or "")
-        assert (app / "Organizador.exe").read_bytes() == b"old executable"
+        assert (app / "SortInator.exe").read_bytes() == b"old executable"
         assert transaction.staging_dir.is_dir()
         assert not transaction.rollback_dir.exists()
         assert not transaction.lock_path.exists()
@@ -946,7 +946,7 @@ def test_real_powershell_helper_rolls_back_when_ready_never_arrives(
         removed = updater.prune_abandoned_update_state(tmp_path / "relaunch-data")
         assert transaction.staging_dir in removed
         assert not transaction.staging_dir.exists()
-        assert (app / "Organizador.exe").read_bytes() == b"old executable"
+        assert (app / "SortInator.exe").read_bytes() == b"old executable"
     finally:
         if helper.poll() is None:
             helper.terminate()
@@ -997,7 +997,7 @@ def test_real_powershell_helper_rolls_back_after_commit_failure(
         assert result.phase == "wait_healthy"
         assert result.committed is True
         assert result.rollback_succeeded is True
-        assert (app / "Organizador.exe").read_bytes() == sleeping_executable.read_bytes()
+        assert (app / "SortInator.exe").read_bytes() == sleeping_executable.read_bytes()
         assert transaction.staging_dir.is_dir()
         assert not transaction.rollback_dir.exists()
         assert not transaction.lock_path.exists()
@@ -1067,7 +1067,7 @@ def test_real_powershell_helper_keeps_healthy_install_when_cleanup_fails(
         assert result.cleanup_deferred is True
         # The healthy new installation stays in place and the retained old
         # copy is swept by a later launch.
-        assert (app / "Organizador.exe").read_bytes() == sleeping_executable.read_bytes()
+        assert (app / "SortInator.exe").read_bytes() == sleeping_executable.read_bytes()
         assert transaction.rollback_dir.is_dir()
         assert not transaction.lock_path.exists()
         assert updater.prune_completed_rollback_directories(app, data_dir) == ()
@@ -1125,7 +1125,7 @@ def test_real_powershell_helper_keeps_healthy_install_when_receipt_write_fails(
         )
         updater.mark_update_healthy(transaction.manifest_path, transaction.token, pid=555)
         assert _wait_helper(helper, transaction) == 0
-        assert (app / "Organizador.exe").read_bytes() == sleeping_executable.read_bytes()
+        assert (app / "SortInator.exe").read_bytes() == sleeping_executable.read_bytes()
         assert not transaction.rollback_dir.exists()
         assert not transaction.lock_path.exists()
         assert transaction.result_path.is_dir()
@@ -1138,7 +1138,7 @@ def test_real_powershell_helper_keeps_healthy_install_when_receipt_write_fails(
 def test_abort_update_transaction_discards_lock_staging_and_state(app_dir: Path) -> None:
     transaction = updater.create_update_transaction(app_dir, "0.6.2")
     transaction.staging_dir.mkdir(parents=True)
-    (transaction.staging_dir / "Organizador.exe").write_bytes(b"staged")
+    (transaction.staging_dir / "SortInator.exe").write_bytes(b"staged")
     assert transaction.lock_path.is_file()
 
     updater.abort_update_transaction(transaction)
@@ -1282,7 +1282,7 @@ def test_prune_reclaims_an_aged_rolled_back_staging_copy(tmp_path: Path) -> None
     assert rolled.staging_dir in removed
     assert not rolled.state_dir.exists()
     assert not rolled.staging_dir.exists()
-    assert (app / "Organizador.exe").read_bytes() == b"app binary"
+    assert (app / "SortInator.exe").read_bytes() == b"app binary"
 
 
 def test_prune_keeps_a_fresh_rolled_back_result_for_the_notification(

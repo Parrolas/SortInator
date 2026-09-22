@@ -80,7 +80,7 @@ def test_main_window_builds_and_refreshes_all_pages(
     visible_copy = [item.text() for item in window.subjects_page.findChildren(QLabel)]
     assert any(subject.name in text for text in visible_copy)
     settings_copy = [item.text() for item in window.settings_page.findChildren(QLabel)]
-    assert any(f"Organizador v{__version__}" in text for text in settings_copy)
+    assert any(f"SortInator v{__version__}" in text for text in settings_copy)
     import_requests: list[bool] = []
     window.inbox_page.import_existing_requested.connect(lambda: import_requests.append(True))
     window.inbox_page.import_button.click()
@@ -2230,7 +2230,7 @@ def test_update_install_finished_transaction_launches_helper_before_shutdown(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     app = tmp_path / "Prog App"
     (app / "_internal").mkdir(parents=True)
-    (app / "Organizador.exe").write_bytes(b"old")
+    (app / "SortInator.exe").write_bytes(b"old")
     transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
     updater.write_update_helper(transaction)
     launched: dict[str, object] = {}
@@ -2311,7 +2311,7 @@ def test_helper_ready_timeout_terminates_helper_before_aborting(
     controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
     app = tmp_path / "Prog App"
     (app / "_internal").mkdir(parents=True)
-    (app / "Organizador.exe").write_bytes(b"old")
+    (app / "SortInator.exe").write_bytes(b"old")
     transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
     events: list[str] = []
 
@@ -2363,7 +2363,7 @@ def test_helper_ready_timeout_proceeds_when_the_marker_arrives_late(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     app = tmp_path / "Prog App"
     (app / "_internal").mkdir(parents=True)
-    (app / "Organizador.exe").write_bytes(b"old")
+    (app / "SortInator.exe").write_bytes(b"old")
     transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
     shutdowns: list[bool] = []
     aborts: list[bool] = []
@@ -2399,7 +2399,7 @@ def test_helper_ready_timeout_fails_closed_when_helper_cannot_be_stopped(
     controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
     app = tmp_path / "Prog App"
     (app / "_internal").mkdir(parents=True)
-    (app / "Organizador.exe").write_bytes(b"old")
+    (app / "SortInator.exe").write_bytes(b"old")
     transaction = updater.create_update_transaction(app, "0.6.2", data_dir=app_config.data_dir)
     aborts: list[bool] = []
 
@@ -2447,7 +2447,7 @@ def test_legacy_rollback_bridge_retains_then_cleans(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     app = tmp_path / "Legacy App"
     (app / "_internal").mkdir(parents=True)
-    (app / "Organizador.exe").write_bytes(b"current")
+    (app / "SortInator.exe").write_bytes(b"current")
     old = tmp_path / "Organizador.old"
     (old / "_internal").mkdir(parents=True)
     (old / "Organizador.exe").write_bytes(b"previous")
@@ -3042,7 +3042,7 @@ def test_handshake_activation_failure_restores_pending_migration(
 
         app = tmp_path / "Handshake App"
         (app / "_internal").mkdir(parents=True)
-        (app / "Organizador.exe").write_bytes(b"candidate")
+        (app / "SortInator.exe").write_bytes(b"candidate")
         transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
         state = StartupState(configured=True, services_ready=True)
         exits: list[int] = []
@@ -3093,7 +3093,7 @@ def test_handshake_acknowledges_health_before_closing_data_rollback(
 
         app = tmp_path / "Handshake App"
         (app / "_internal").mkdir(parents=True)
-        (app / "Organizador.exe").write_bytes(b"candidate")
+        (app / "SortInator.exe").write_bytes(b"candidate")
         transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
         state = StartupState(configured=True, services_ready=True)
         order: list[str] = []
@@ -3150,7 +3150,7 @@ def test_handshake_validation_failure_skips_ack_and_restores(
 
         app = tmp_path / "Handshake App"
         (app / "_internal").mkdir(parents=True)
-        (app / "Organizador.exe").write_bytes(b"candidate")
+        (app / "SortInator.exe").write_bytes(b"candidate")
         transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
         state = StartupState(configured=True, services_ready=True)
         exits: list[int] = []
@@ -3220,7 +3220,7 @@ def test_handshake_ack_failure_restores_data_rollback(
 
         app = tmp_path / "Handshake App"
         (app / "_internal").mkdir(parents=True)
-        (app / "Organizador.exe").write_bytes(b"candidate")
+        (app / "SortInator.exe").write_bytes(b"candidate")
         transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
         state = StartupState(configured=True, services_ready=True)
         exits: list[int] = []
@@ -3300,7 +3300,7 @@ def test_handshake_transient_validation_failure_restores_quarantined_bundle(
 
         app = tmp_path / "Handshake App"
         (app / "_internal").mkdir(parents=True)
-        (app / "Organizador.exe").write_bytes(b"candidate")
+        (app / "SortInator.exe").write_bytes(b"candidate")
         transaction = updater.create_update_transaction(app, "0.6.3", data_dir=app_config.data_dir)
         state = StartupState(configured=True, services_ready=True)
         exits: list[int] = []

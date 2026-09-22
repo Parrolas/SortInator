@@ -463,7 +463,7 @@ class AppController(QObject):
         if self._pending_transfers or self._backup_jobs:
             if self._shutdown_progress is None:
                 self._shutdown_progress = QProgressDialog(self.main_window)
-                self._shutdown_progress.setWindowTitle(_("A terminar o Organizador"))
+                self._shutdown_progress.setWindowTitle(_("A terminar o SortInator"))
                 self._shutdown_progress.setCancelButton(None)
                 self._shutdown_progress.setRange(0, 0)
                 self._shutdown_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
@@ -2114,7 +2114,7 @@ class AppController(QObject):
         self._submit_backup("backup-import", work)
 
     def _export_backup(self, bundle: BundleInfo) -> None:
-        suggested = f"Organizador-backup-{bundle.created_at:%Y-%m-%d}.zip"
+        suggested = f"SortInator-backup-{bundle.created_at:%Y-%m-%d}.zip"
         selected = QFileDialog.getSaveFileName(
             self._backup_dialog or self.main_window,
             _("Exportar cópia de segurança"),
@@ -2199,7 +2199,7 @@ class AppController(QObject):
             QMessageBox.information(
                 self.main_window,
                 _("Restaurar cópia de segurança"),
-                _("Fecha e reabre o Organizador para concluir a reposição."),
+                _("Fecha e reabre o SortInator para concluir a reposição."),
             )
             self.shutdown()
             return
@@ -2227,7 +2227,7 @@ class AppController(QObject):
             QMessageBox.information(
                 self.main_window,
                 _("Restaurar cópia de segurança"),
-                _("Fecha e reabre o Organizador para concluir a reposição."),
+                _("Fecha e reabre o SortInator para concluir a reposição."),
             )
         self.shutdown()
 
@@ -2284,6 +2284,8 @@ class AppController(QObject):
         app_dir = updater.app_directory()
         if app_dir is None:
             return
+        # Pre-0.6.2 installs left their rollback copy under the old product
+        # name; the bridge must keep looking for that literal folder name.
         legacy = app_dir.parent / "Organizador.old"
         if not legacy.is_dir():
             return
@@ -2439,7 +2441,7 @@ class AppController(QObject):
             if not automatic:
                 self.tray.notify(
                     _("Sem atualizações"),
-                    _("O Organizador está atualizado."),
+                    _("O SortInator está atualizado."),
                 )
             return
         info = result.update
@@ -2452,7 +2454,7 @@ class AppController(QObject):
         self.tray.notify(
             _("Atualização disponível"),
             _(
-                "Organizador {version} está disponível. Escolhe "
+                "SortInator {version} está disponível. Escolhe "
                 "“Instalar atualização” no menu do tabuleiro."
             ).format(version=version),
         )
@@ -2486,7 +2488,7 @@ class AppController(QObject):
         self.tray.set_update_state(installing=True, version=version)
         self.tray.notify(
             _("A instalar atualização…"),
-            _("A transferir e a verificar Organizador {version}.").format(version=version),
+            _("A transferir e a verificar SortInator {version}.").format(version=version),
         )
 
         def run() -> None:
@@ -2846,7 +2848,7 @@ class AppController(QObject):
             return
         self.hide_notice_shown = True
         self.tray.notify(
-            _("Organizador continua ativo"),
+            _("SortInator continua ativo"),
             _("A janela fechou, mas Downloads continua a ser vigiado no tabuleiro do sistema."),
         )
 

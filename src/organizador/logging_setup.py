@@ -16,7 +16,7 @@ def configure_logging(data_dir: Path) -> None:
     """Configure one rotating log handler for the selected application data folder."""
 
     data_dir.mkdir(parents=True, exist_ok=True)
-    log_path = (data_dir / "organizador.log").resolve()
+    log_path = (data_dir / "sortinator.log").resolve()
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     for existing in root.handlers:

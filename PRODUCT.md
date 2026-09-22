@@ -1,4 +1,4 @@
-# Organizador
+# SortInator
 
 <!-- impeccable:product-schema 1 -->
 
@@ -20,7 +20,7 @@ without repeatedly navigating Windows Explorer.
 
 ## Product Purpose
 
-Organizador moves eligible completed downloads into a safe university inbox,
+SortInator moves eligible completed downloads into a safe university inbox,
 asks for the relevant subject and document type, and files the document in the
 right folder. It also keeps subject-linked tasks and makes PDF, modern Office,
 text and notebook contents searchable. Success means the Downloads folder no

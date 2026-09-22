@@ -1,5 +1,5 @@
 # ruff: noqa: E501
-"""English, Spanish and French translations for Organizador.
+"""English, Spanish and French translations for SortInator.
 
 Keys are the Portuguese source strings. English is complete; Spanish and
 French mirror it. A missing key falls back to the Portuguese source at
@@ -9,6 +9,8 @@ runtime, and the parity tests keep the three languages aligned.
 from __future__ import annotations
 
 EN_STRINGS: dict[str, str] = {
+    "Não foi possível atualizar a pasta de dados": "Could not update the data folder",
+    "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "The data from the previous version could not be moved to the new folder. Close any older version that is running and try again. No file was changed.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "The update helper may still be running. Restart the application and try again.",
     "Adotar ficheiro existente?": "Adopt the existing file?",
     "{name} será adicionado ao catálogo e à pesquisa local. O ficheiro não será movido, renomeado nem alterado.": "{name} will be added to the catalog and local search. The file will not be moved, renamed or changed.",
@@ -36,7 +38,7 @@ EN_STRINGS: dict[str, str] = {
     "Sem correspondências": "No matching commands",
     "Notificação indisponível": "Notification unavailable",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "The notification expired or a file is no longer available. Browse your files in the app.",
-    "A terminar o Organizador": "Closing Organizador",
+    "A terminar o SortInator": "Closing SortInator",
     "A concluir {count} operações de ficheiros antes de sair…": "Finishing {count} file operations before closing…",
     "A concluir a cópia de segurança antes de sair…": ("Finishing the backup before closing…"),
     "Espera que as operações de ficheiros terminem antes de guardar.": "Wait for file operations to finish before saving.",
@@ -65,9 +67,9 @@ EN_STRINGS: dict[str, str] = {
     "1 semana antes": "1 week before",
     "2 dias antes": "2 days before",
     "3 dias antes": "3 days before",
-    "A aplicação não conseguiu abrir o catálogo local. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+    "A aplicação não conseguiu abrir o catálogo local. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
         "The application could not open the local catalog. "
-        "Check organizador.log before trying again.\n\n{error}"
+        "Check sortinator.log before trying again.\n\n{error}"
     ),
     "A app ainda não tem histórico. Organiza o primeiro ficheiro para começar.": (
         "The app has no history yet. Organize your first file to get started."
@@ -104,7 +106,7 @@ EN_STRINGS: dict[str, str] = {
     "Abre a Caixa de Entrada para rever.": "Open the Inbox to review.",
     "Abrir": "Open",
     "Abrir Downloads": "Open Downloads",
-    "Abrir Organizador": "Open Organizador",
+    "Abrir SortInator": "Open SortInator",
     "Abrir Universidade": "Open University folder",
     "Abrir pasta": "Open folder",
     "Abrir pasta Universidade": "Open University folder",
@@ -210,8 +212,8 @@ EN_STRINGS: dict[str, str] = {
     "Espera que o lote atual termine antes de iniciar outro.": (
         "Wait for the current batch to finish before starting another."
     ),
-    "Esta base de dados foi criada por uma versão mais recente do Organizador. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
-        "This database was created by a newer version of Organizador. "
+    "Esta base de dados foi criada por uma versão mais recente do SortInator. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
+        "This database was created by a newer version of SortInator. "
         "Open the newest version of the app. No file was changed."
     ),
     "Ex.: Cálculo I": "e.g. Calculus I",
@@ -247,7 +249,7 @@ EN_STRINGS: dict[str, str] = {
     "Importação de Downloads concluída": "Downloads import finished",
     "Importação em curso": "Import in progress",
     "Importação indisponível": "Import unavailable",
-    "Iniciar o Organizador quando entro no Windows": "Start Organizador when I sign in to Windows",
+    "Iniciar o SortInator quando entro no Windows": "Start SortInator when I sign in to Windows",
     "Início": "Home",
     "Já existe uma disciplina ativa com o mesmo nome ou pasta: {names}. Edita-a primeiro para libertar o nome.": (
         "An active subject already uses the same name or folder: {names}. "
@@ -314,9 +316,9 @@ EN_STRINGS: dict[str, str] = {
     "Não foi possível remover": "Could not remove",
     "Não foi possível restaurar": "Could not restore",
     "Não foi possível restaurar a cópia": "Could not restore the backup",
-    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
         "The requested backup could not be restored and the current data was kept. "
-        "Check organizador.log before trying again.\n\n{error}"
+        "Check sortinator.log before trying again.\n\n{error}"
     ),
     "Cópia restaurada": "Backup restored",
     "Os dados foram repostos a partir da cópia de {when}.": (
@@ -353,20 +355,20 @@ EN_STRINGS: dict[str, str] = {
     "Operação de desfazer interrompida; confirma as pastas antes de continuar.": (
         "Interrupted undo operation; confirm the folders before continuing."
     ),
-    "Organizador": "Organizador",
-    "Organizador continua ativo": "Organizador is still active",
-    "Organizador v{version} · código MIT · componentes de terceiros com licenças próprias": (
-        "Organizador v{version} · MIT license · third-party components under their own licenses"
+    "SortInator": "SortInator",
+    "SortInator continua ativo": "SortInator is still active",
+    "SortInator v{version} · código MIT · componentes de terceiros com licenças próprias": (
+        "SortInator v{version} · MIT license · third-party components under their own licenses"
     ),
-    "Organizador · a preparar": "Organizador · preparing",
-    "Organizador · {state}": "Organizador · {state}",
+    "SortInator · a preparar": "SortInator · preparing",
+    "SortInator · {state}": "SortInator · {state}",
     "Organizar": "Organize",
     "Organizar ficheiro": "Organize file",
     "Organizar seleção": "Organize selection",
     "Organizar seleção ({count})": "Organize selection ({count})",
     "Organizar {count} ficheiro": "Organize {count} file",
     "Organizar {count} ficheiros": "Organize {count} files",
-    "Organizar com Organizador": "Organize with Organizador",
+    "Organizar com SortInator": "Organize with SortInator",
     "Atualização em curso": "Update in progress",
     "A organizar {count} ficheiro…": "Organizing {count} file…",
     "A organizar {count} ficheiros…": "Organizing {count} files…",
@@ -422,7 +424,7 @@ EN_STRINGS: dict[str, str] = {
     "Prazo das tarefas": "Task deadline",
     "Prazo em {count} dias · {date}": "Due in {count} days · {date}",
     "Prazo hoje": "Due today",
-    "Preparar o Organizador": "Set up Organizador",
+    "Preparar o SortInator": "Set up SortInator",
     "Primeira disciplina": "First subject",
     "Procura palavras dentro de PDFs, documentos Office, ficheiros de texto e notebooks já organizados.": (
         "Search words inside organized PDFs, Office documents, text files and notebooks."
@@ -482,8 +484,8 @@ EN_STRINGS: dict[str, str] = {
     "Espera que as operações de ficheiros terminem antes de restaurar.": (
         "Wait for the file operations to finish before restoring."
     ),
-    "Fecha e reabre o Organizador para concluir a reposição.": (
-        "Close and reopen Organizador to finish the restore."
+    "Fecha e reabre o SortInator para concluir a reposição.": (
+        "Close and reopen SortInator to finish the restore."
     ),
     "Restaurar substitui o catálogo e as definições atuais.": (
         "Restoring replaces the current catalog and settings."
@@ -671,8 +673,8 @@ EN_STRINGS: dict[str, str] = {
     "Procurar atualizações…": "Check for updates…",
     "Instalar atualização {version}": "Install update {version}",
     "Atualização disponível": "Update available",
-    "Organizador {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
-        "Organizador {version} is available. Choose “Install update” in the tray menu."
+    "SortInator {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
+        "SortInator {version} is available. Choose “Install update” in the tray menu."
     ),
     "A transferência da atualização falhou: {error}": "The update download failed: {error}",
     "Não foi possível verificar a atualização: {error}": ("Could not verify the update: {error}"),
@@ -684,8 +686,8 @@ EN_STRINGS: dict[str, str] = {
         "The update does not contain the complete application."
     ),
     "A instalar atualização…": "Installing update…",
-    "A transferir e a verificar Organizador {version}.": (
-        "Downloading and verifying Organizador {version}."
+    "A transferir e a verificar SortInator {version}.": (
+        "Downloading and verifying SortInator {version}."
     ),
     "A reiniciar para aplicar a atualização…": "Restarting to apply the update…",
     "Atualização falhou": "Update failed",
@@ -723,8 +725,8 @@ EN_STRINGS: dict[str, str] = {
     "A atualização contém um tipo de ficheiro não permitido.": (
         "The update contains a disallowed file type."
     ),
-    "A pasta não contém uma instalação completa do Organizador.": (
-        "The folder does not contain a complete Organizador installation."
+    "A pasta não contém uma instalação completa do SortInator.": (
+        "The folder does not contain a complete SortInator installation."
     ),
     "Não foi possível iniciar o assistente de atualização.": (
         "Could not start the update assistant."
@@ -739,7 +741,7 @@ EN_STRINGS: dict[str, str] = {
     "A procurar atualizações…": "Checking for updates…",
     "A instalar atualização {version}…": "Installing update {version}…",
     "Sem atualizações": "No updates",
-    "O Organizador está atualizado.": "Organizador is up to date.",
+    "O SortInator está atualizado.": "SortInator is up to date.",
     "Não foi possível procurar atualizações.": "Could not check for updates.",
     "A atualização transferida não corresponde à versão {version}.": (
         "The downloaded update does not match version {version}."
@@ -924,6 +926,8 @@ EN_STRINGS: dict[str, str] = {
 }
 
 ES_STRINGS: dict[str, str] = {
+    "Não foi possível atualizar a pasta de dados": "No se pudo actualizar la carpeta de datos",
+    "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "Los datos de la versión anterior no se pudieron mover a la nueva carpeta. Cierra cualquier versión antigua en ejecución e inténtalo de nuevo. No se cambió ningún archivo.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "El asistente de actualización puede seguir ejecutándose. Reinicia la aplicación e inténtalo de nuevo.",
     "Adotar ficheiro existente?": "¿Adoptar el archivo existente?",
     "{name} será adicionado ao catálogo e à pesquisa local. O ficheiro não será movido, renomeado nem alterado.": "{name} se añadirá al catálogo y a la búsqueda local. El archivo no se moverá, renombrará ni modificará.",
@@ -951,7 +955,7 @@ ES_STRINGS: dict[str, str] = {
     "Sem correspondências": "Sin coincidencias",
     "Notificação indisponível": "Notificación no disponible",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notificación ha caducado o algún archivo ya no está disponible. Consulta tus archivos en la app.",
-    "A terminar o Organizador": "Cerrando Organizador",
+    "A terminar o SortInator": "Cerrando SortInator",
     "A concluir {count} operações de ficheiros antes de sair…": "Terminando {count} operaciones de archivos antes de salir…",
     "A concluir a cópia de segurança antes de sair…": (
         "Terminando la copia de seguridad antes de salir…"
@@ -982,8 +986,8 @@ ES_STRINGS: dict[str, str] = {
     "1 semana antes": "1 semana antes",
     "2 dias antes": "2 días antes",
     "3 dias antes": "3 días antes",
-    "A aplicação não conseguiu abrir o catálogo local. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
-        "La aplicación no pudo abrir el catálogo local. Consulta organizador.log "
+    "A aplicação não conseguiu abrir o catálogo local. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
+        "La aplicación no pudo abrir el catálogo local. Consulta sortinator.log "
         "antes de intentarlo de nuevo.\n\n{error}"
     ),
     "A app ainda não tem histórico. Organiza o primeiro ficheiro para começar.": (
@@ -1022,7 +1026,7 @@ ES_STRINGS: dict[str, str] = {
     "Abre a Caixa de Entrada para rever.": "Abre la Bandeja de Entrada para revisar.",
     "Abrir": "Abrir",
     "Abrir Downloads": "Abrir Descargas",
-    "Abrir Organizador": "Abrir Organizador",
+    "Abrir SortInator": "Abrir SortInator",
     "Abrir Universidade": "Abrir carpeta Universidad",
     "Abrir pasta": "Abrir carpeta",
     "Abrir pasta Universidade": "Abrir carpeta Universidad",
@@ -1131,8 +1135,8 @@ ES_STRINGS: dict[str, str] = {
     "Espera que o lote atual termine antes de iniciar outro.": (
         "Espera a que termine el lote actual antes de iniciar otro."
     ),
-    "Esta base de dados foi criada por uma versão mais recente do Organizador. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
-        "Esta base de datos fue creada por una versión más reciente de Organizador. "
+    "Esta base de dados foi criada por uma versão mais recente do SortInator. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
+        "Esta base de datos fue creada por una versión más reciente de SortInator. "
         "Abre la versión más reciente de la app. Ningún archivo fue alterado."
     ),
     "Ex.: Cálculo I": "Ej.: Cálculo I",
@@ -1168,9 +1172,7 @@ ES_STRINGS: dict[str, str] = {
     "Importação de Downloads concluída": "Importación de Descargas terminada",
     "Importação em curso": "Importación en curso",
     "Importação indisponível": "Importación no disponible",
-    "Iniciar o Organizador quando entro no Windows": (
-        "Iniciar Organizador cuando entro en Windows"
-    ),
+    "Iniciar o SortInator quando entro no Windows": ("Iniciar SortInator cuando entro en Windows"),
     "Início": "Inicio",
     "Já existe uma disciplina ativa com o mesmo nome ou pasta: {names}. Edita-a primeiro para libertar o nome.": (
         "Ya existe una asignatura activa con el mismo nombre o carpeta: {names}. "
@@ -1237,9 +1239,9 @@ ES_STRINGS: dict[str, str] = {
     "Não foi possível remover": "No se pudo eliminar",
     "Não foi possível restaurar": "No se pudo restaurar",
     "Não foi possível restaurar a cópia": "No se pudo restaurar la copia",
-    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
         "La copia solicitada no se pudo restaurar y los datos actuales se mantuvieron. "
-        "Consulta organizador.log antes de intentarlo de nuevo.\n\n{error}"
+        "Consulta sortinator.log antes de intentarlo de nuevo.\n\n{error}"
     ),
     "Cópia restaurada": "Copia restaurada",
     "Os dados foram repostos a partir da cópia de {when}.": (
@@ -1276,20 +1278,20 @@ ES_STRINGS: dict[str, str] = {
     "Operação de desfazer interrompida; confirma as pastas antes de continuar.": (
         "Operación de deshacer interrumpida; confirma las carpetas antes de continuar."
     ),
-    "Organizador": "Organizador",
-    "Organizador continua ativo": "Organizador sigue activo",
-    "Organizador v{version} · código MIT · componentes de terceiros com licenças próprias": (
-        "Organizador v{version} · licencia MIT · componentes de terceros con sus propias licencias"
+    "SortInator": "SortInator",
+    "SortInator continua ativo": "SortInator sigue activo",
+    "SortInator v{version} · código MIT · componentes de terceiros com licenças próprias": (
+        "SortInator v{version} · licencia MIT · componentes de terceros con sus propias licencias"
     ),
-    "Organizador · a preparar": "Organizador · preparando",
-    "Organizador · {state}": "Organizador · {state}",
+    "SortInator · a preparar": "SortInator · preparando",
+    "SortInator · {state}": "SortInator · {state}",
     "Organizar": "Organizar",
     "Organizar ficheiro": "Organizar archivo",
     "Organizar seleção": "Organizar selección",
     "Organizar seleção ({count})": "Organizar selección ({count})",
     "Organizar {count} ficheiro": "Organizar {count} archivo",
     "Organizar {count} ficheiros": "Organizar {count} archivos",
-    "Organizar com Organizador": "Organizar con Organizador",
+    "Organizar com SortInator": "Organizar con SortInator",
     "Atualização em curso": "Actualización en curso",
     "A organizar {count} ficheiro…": "Organizando {count} archivo…",
     "A organizar {count} ficheiros…": "Organizando {count} archivos…",
@@ -1345,7 +1347,7 @@ ES_STRINGS: dict[str, str] = {
     "Prazo das tarefas": "Plazo de las tareas",
     "Prazo em {count} dias · {date}": "Vence en {count} días · {date}",
     "Prazo hoje": "Vence hoy",
-    "Preparar o Organizador": "Preparar Organizador",
+    "Preparar o SortInator": "Preparar SortInator",
     "Primeira disciplina": "Primera asignatura",
     "Procura palavras dentro de PDFs, documentos Office, ficheiros de texto e notebooks já organizados.": (
         "Busca palabras dentro de PDFs, documentos Office, archivos de texto y "
@@ -1406,8 +1408,8 @@ ES_STRINGS: dict[str, str] = {
     "Espera que as operações de ficheiros terminem antes de restaurar.": (
         "Espera a que terminen las operaciones de archivos antes de restaurar."
     ),
-    "Fecha e reabre o Organizador para concluir a reposição.": (
-        "Cierra y vuelve a abrir Organizador para completar la restauración."
+    "Fecha e reabre o SortInator para concluir a reposição.": (
+        "Cierra y vuelve a abrir SortInator para completar la restauración."
     ),
     "Restaurar substitui o catálogo e as definições atuais.": (
         "Restaurar sustituye el catálogo y las definiciones actuales."
@@ -1608,8 +1610,8 @@ ES_STRINGS: dict[str, str] = {
     "Procurar atualizações…": "Buscar actualizaciones…",
     "Instalar atualização {version}": "Instalar actualización {version}",
     "Atualização disponível": "Actualización disponible",
-    "Organizador {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
-        "Organizador {version} está disponible. Elige «Instalar actualización» en el menú de la bandeja."
+    "SortInator {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
+        "SortInator {version} está disponible. Elige «Instalar actualización» en el menú de la bandeja."
     ),
     "A transferência da atualização falhou: {error}": (
         "La descarga de la actualización falló: {error}"
@@ -1625,8 +1627,8 @@ ES_STRINGS: dict[str, str] = {
         "La actualización no contiene la aplicación completa."
     ),
     "A instalar atualização…": "Instalando actualización…",
-    "A transferir e a verificar Organizador {version}.": (
-        "Descargando y verificando Organizador {version}."
+    "A transferir e a verificar SortInator {version}.": (
+        "Descargando y verificando SortInator {version}."
     ),
     "A reiniciar para aplicar a atualização…": "Reiniciando para aplicar la actualización…",
     "Atualização falhou": "Actualización fallida",
@@ -1668,8 +1670,8 @@ ES_STRINGS: dict[str, str] = {
     "A atualização contém um tipo de ficheiro não permitido.": (
         "La actualización contiene un tipo de archivo no permitido."
     ),
-    "A pasta não contém uma instalação completa do Organizador.": (
-        "La carpeta no contiene una instalación completa de Organizador."
+    "A pasta não contém uma instalação completa do SortInator.": (
+        "La carpeta no contiene una instalación completa de SortInator."
     ),
     "Não foi possível iniciar o assistente de atualização.": (
         "No se pudo iniciar el asistente de actualización."
@@ -1686,7 +1688,7 @@ ES_STRINGS: dict[str, str] = {
     "A procurar atualizações…": "Buscando actualizaciones…",
     "A instalar atualização {version}…": "Instalando actualización {version}…",
     "Sem atualizações": "Sin actualizaciones",
-    "O Organizador está atualizado.": "Organizador está actualizado.",
+    "O SortInator está atualizado.": "SortInator está actualizado.",
     "Não foi possível procurar atualizações.": "No se pudo buscar actualizaciones.",
     "A atualização transferida não corresponde à versão {version}.": (
         "La actualización descargada no corresponde a la versión {version}."
@@ -1882,6 +1884,8 @@ ES_STRINGS: dict[str, str] = {
 }
 
 FR_STRINGS: dict[str, str] = {
+    "Não foi possível atualizar a pasta de dados": "Impossible de mettre à jour le dossier de données",
+    "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "Les données de la version précédente n'ont pas pu être déplacées vers le nouveau dossier. Ferme toute version plus ancienne en cours d'exécution et réessaie. Aucun fichier n'a été modifié.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "L'assistant de mise à jour est peut-être encore en cours. Redémarre l'application et réessaie.",
     "Adotar ficheiro existente?": "Adopter le fichier existant ?",
     "{name} será adicionado ao catálogo e à pesquisa local. O ficheiro não será movido, renomeado nem alterado.": "{name} sera ajouté au catalogue et à la recherche locale. Le fichier ne sera ni déplacé, ni renommé, ni modifié.",
@@ -1909,7 +1913,7 @@ FR_STRINGS: dict[str, str] = {
     "Sem correspondências": "Aucune correspondance",
     "Notificação indisponível": "Notification indisponible",
     "A notificação expirou ou algum ficheiro já não está disponível. Consulta os ficheiros na app.": "La notification a expiré ou un fichier n'est plus disponible. Consultez vos fichiers dans l'application.",
-    "A terminar o Organizador": "Fermeture d'Organizador",
+    "A terminar o SortInator": "Fermeture d'SortInator",
     "A concluir {count} operações de ficheiros antes de sair…": "Fin de {count} opérations de fichiers avant la fermeture…",
     "A concluir a cópia de segurança antes de sair…": ("Fin de la sauvegarde avant la fermeture…"),
     "Espera que as operações de ficheiros terminem antes de guardar.": "Attendez la fin des opérations de fichiers avant d'enregistrer.",
@@ -1938,8 +1942,8 @@ FR_STRINGS: dict[str, str] = {
     "1 semana antes": "1 semaine avant",
     "2 dias antes": "2 jours avant",
     "3 dias antes": "3 jours avant",
-    "A aplicação não conseguiu abrir o catálogo local. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
-        "L'application n'a pas pu ouvrir le catalogue local. Consulte organizador.log "
+    "A aplicação não conseguiu abrir o catálogo local. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
+        "L'application n'a pas pu ouvrir le catalogue local. Consulte sortinator.log "
         "avant de réessayer.\n\n{error}"
     ),
     "A app ainda não tem histórico. Organiza o primeiro ficheiro para começar.": (
@@ -1978,7 +1982,7 @@ FR_STRINGS: dict[str, str] = {
     "Abre a Caixa de Entrada para rever.": "Ouvre la Boîte de réception pour vérifier.",
     "Abrir": "Ouvrir",
     "Abrir Downloads": "Ouvrir Téléchargements",
-    "Abrir Organizador": "Ouvrir Organizador",
+    "Abrir SortInator": "Ouvrir SortInator",
     "Abrir Universidade": "Ouvrir le dossier Université",
     "Abrir pasta": "Ouvrir le dossier",
     "Abrir pasta Universidade": "Ouvrir le dossier Université",
@@ -2089,8 +2093,8 @@ FR_STRINGS: dict[str, str] = {
     "Espera que o lote atual termine antes de iniciar outro.": (
         "Attends la fin du lot en cours avant d'en commencer un autre."
     ),
-    "Esta base de dados foi criada por uma versão mais recente do Organizador. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
-        "Cette base de données a été créée par une version plus récente d'Organizador. "
+    "Esta base de dados foi criada por uma versão mais recente do SortInator. Abre a versão mais recente da app. Nenhum ficheiro foi alterado.": (
+        "Cette base de données a été créée par une version plus récente d'SortInator. "
         "Ouvre la version la plus récente de l'application. Aucun fichier n'a été modifié."
     ),
     "Ex.: Cálculo I": "ex. : Calcul I",
@@ -2127,9 +2131,7 @@ FR_STRINGS: dict[str, str] = {
     "Importação de Downloads concluída": "Importation de Téléchargements terminée",
     "Importação em curso": "Importation en cours",
     "Importação indisponível": "Importation indisponible",
-    "Iniciar o Organizador quando entro no Windows": (
-        "Lancer Organizador à l'ouverture de Windows"
-    ),
+    "Iniciar o SortInator quando entro no Windows": ("Lancer SortInator à l'ouverture de Windows"),
     "Início": "Accueil",
     "Já existe uma disciplina ativa com o mesmo nome ou pasta: {names}. Edita-a primeiro para libertar o nome.": (
         "Une matière active utilise déjà le même nom ou dossier : {names}. "
@@ -2198,9 +2200,9 @@ FR_STRINGS: dict[str, str] = {
     "Não foi possível remover": "Impossible de supprimer",
     "Não foi possível restaurar": "Impossible de restaurer",
     "Não foi possível restaurar a cópia": "Impossible de restaurer la sauvegarde",
-    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta organizador.log antes de tentar novamente.\n\n{error}": (
+    "A cópia pedida não pôde ser restaurada e os dados atuais foram mantidos. Consulta sortinator.log antes de tentar novamente.\n\n{error}": (
         "La sauvegarde demandée n'a pas pu être restaurée et les données actuelles ont été "
-        "conservées. Consulte organizador.log avant de réessayer.\n\n{error}"
+        "conservées. Consulte sortinator.log avant de réessayer.\n\n{error}"
     ),
     "Cópia restaurada": "Sauvegarde restaurée",
     "Os dados foram repostos a partir da cópia de {when}.": (
@@ -2238,20 +2240,20 @@ FR_STRINGS: dict[str, str] = {
     "Operação de desfazer interrompida; confirma as pastas antes de continuar.": (
         "Opération d'annulation interrompue ; vérifie les dossiers avant de continuer."
     ),
-    "Organizador": "Organizador",
-    "Organizador continua ativo": "Organizador reste actif",
-    "Organizador v{version} · código MIT · componentes de terceiros com licenças próprias": (
-        "Organizador v{version} · licence MIT · composants tiers sous leurs propres licences"
+    "SortInator": "SortInator",
+    "SortInator continua ativo": "SortInator reste actif",
+    "SortInator v{version} · código MIT · componentes de terceiros com licenças próprias": (
+        "SortInator v{version} · licence MIT · composants tiers sous leurs propres licences"
     ),
-    "Organizador · a preparar": "Organizador · préparation",
-    "Organizador · {state}": "Organizador · {state}",
+    "SortInator · a preparar": "SortInator · préparation",
+    "SortInator · {state}": "SortInator · {state}",
     "Organizar": "Ranger",
     "Organizar ficheiro": "Ranger le fichier",
     "Organizar seleção": "Ranger la sélection",
     "Organizar seleção ({count})": "Ranger la sélection ({count})",
     "Organizar {count} ficheiro": "Ranger {count} fichier",
     "Organizar {count} ficheiros": "Ranger {count} fichiers",
-    "Organizar com Organizador": "Organiser avec Organizador",
+    "Organizar com SortInator": "Organiser avec SortInator",
     "Atualização em curso": "Mise à jour en cours",
     "A organizar {count} ficheiro…": "Rangement de {count} fichier…",
     "A organizar {count} ficheiros…": "Rangement de {count} fichiers…",
@@ -2307,7 +2309,7 @@ FR_STRINGS: dict[str, str] = {
     "Prazo das tarefas": "Échéance des tâches",
     "Prazo em {count} dias · {date}": "Dans {count} jours · {date}",
     "Prazo hoje": "À rendre aujourd'hui",
-    "Preparar o Organizador": "Configurer Organizador",
+    "Preparar o SortInator": "Configurer SortInator",
     "Primeira disciplina": "Première matière",
     "Procura palavras dentro de PDFs, documentos Office, ficheiros de texto e notebooks já organizados.": (
         "Cherche des mots dans les PDF, documents Office, fichiers texte et notebooks déjà organisés."
@@ -2370,8 +2372,8 @@ FR_STRINGS: dict[str, str] = {
     "Espera que as operações de ficheiros terminem antes de restaurar.": (
         "Attends la fin des opérations sur les fichiers avant de restaurer."
     ),
-    "Fecha e reabre o Organizador para concluir a reposição.": (
-        "Ferme et rouvre Organizador pour terminer la restauration."
+    "Fecha e reabre o SortInator para concluir a reposição.": (
+        "Ferme et rouvre SortInator pour terminer la restauration."
     ),
     "Restaurar substitui o catálogo e as definições atuais.": (
         "La restauration remplace le catalogue et les définitions actuels."
@@ -2578,8 +2580,8 @@ FR_STRINGS: dict[str, str] = {
     "Procurar atualizações…": "Rechercher des mises à jour…",
     "Instalar atualização {version}": "Installer la mise à jour {version}",
     "Atualização disponível": "Mise à jour disponible",
-    "Organizador {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
-        "Organizador {version} est disponible. Choisis « Installer la mise à jour » "
+    "SortInator {version} está disponível. Escolhe “Instalar atualização” no menu do tabuleiro.": (
+        "SortInator {version} est disponible. Choisis « Installer la mise à jour » "
         "dans le menu de la zone de notification."
     ),
     "A transferência da atualização falhou: {error}": (
@@ -2596,8 +2598,8 @@ FR_STRINGS: dict[str, str] = {
         "La mise à jour ne contient pas l'application complète."
     ),
     "A instalar atualização…": "Installation de la mise à jour…",
-    "A transferir e a verificar Organizador {version}.": (
-        "Téléchargement et vérification d'Organizador {version}."
+    "A transferir e a verificar SortInator {version}.": (
+        "Téléchargement et vérification d'SortInator {version}."
     ),
     "A reiniciar para aplicar a atualização…": "Redémarrage pour appliquer la mise à jour…",
     "Atualização falhou": "Échec de la mise à jour",
@@ -2640,8 +2642,8 @@ FR_STRINGS: dict[str, str] = {
     "A atualização contém um tipo de ficheiro não permitido.": (
         "La mise à jour contient un type de fichier interdit."
     ),
-    "A pasta não contém uma instalação completa do Organizador.": (
-        "Le dossier ne contient pas une installation complète d'Organizador."
+    "A pasta não contém uma instalação completa do SortInator.": (
+        "Le dossier ne contient pas une installation complète d'SortInator."
     ),
     "Não foi possível iniciar o assistente de atualização.": (
         "Impossible de démarrer l'assistant de mise à jour."
@@ -2658,7 +2660,7 @@ FR_STRINGS: dict[str, str] = {
     "A procurar atualizações…": "Recherche de mises à jour…",
     "A instalar atualização {version}…": "Installation de la mise à jour {version}…",
     "Sem atualizações": "Aucune mise à jour",
-    "O Organizador está atualizado.": "Organizador est à jour.",
+    "O SortInator está atualizado.": "SortInator est à jour.",
     "Não foi possível procurar atualizações.": "Impossible de rechercher des mises à jour.",
     "A atualização transferida não corresponde à versão {version}.": (
         "La mise à jour téléchargée ne correspond pas à la version {version}."

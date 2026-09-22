@@ -266,7 +266,7 @@ class OnboardingDialog(QDialog):
         self.config = config
         self.database = database
         self.filer = filer
-        self.setWindowTitle(_("Preparar o Organizador"))
+        self.setWindowTitle(_("Preparar o SortInator"))
         self.setModal(True)
         self.setMinimumSize(820, 540)
 
@@ -280,7 +280,7 @@ class OnboardingDialog(QDialog):
         statement_layout = QVBoxLayout(statement)
         statement_layout.setContentsMargins(32, 38, 32, 34)
         statement_layout.setSpacing(14)
-        brand = label(_("Organizador"), "Brand")
+        brand = label(_("SortInator"), "Brand")
         statement_layout.addWidget(brand)
         promise = QLabel(_("Downloads arrumados\nantes de se perderem."))
         tokens = ui_theme.current()

@@ -113,7 +113,7 @@ class RecoveryCoordinator:
         self,
         data_dir: Path,
         *,
-        database_name: str = "organizador.db",
+        database_name: str = "sortinator.db",
         settings_name: str = "settings.json",
     ) -> None:
         self.data_dir = data_dir
@@ -442,7 +442,7 @@ class RecoveryCoordinator:
         archive = destination
         if archive.suffix.casefold() != ".zip":
             stamp = f"{validated.bundle.created_at:%Y-%m-%d-%H%M%S}"
-            archive = destination / f"Organizador-backup-{stamp}.zip"
+            archive = destination / f"SortInator-backup-{stamp}.zip"
         if archive.is_symlink():
             raise RecoveryError("The export destination must not be a symbolic link.")
         archive.parent.mkdir(parents=True, exist_ok=True)

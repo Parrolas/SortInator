@@ -68,14 +68,14 @@ jobs:
         shell: pwsh
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
-          .\.venv\Scripts\python.exe scripts\run_installer_e2e.py --disposable-account --installer "dist\releases\Organizador-$Version-Setup.exe" --zip "dist\releases\Organizador-$Version-windows-x64.zip"
+          .\.venv\Scripts\python.exe scripts\run_installer_e2e.py --disposable-account --installer "dist\releases\SortInator-$Version-Setup.exe" --zip "dist\releases\SortInator-$Version-windows-x64.zip"
           if ($LASTEXITCODE -ne 0) { throw "Installer lifecycle validation failed" }
 
       - name: Legacy update end-to-end gate (candidate bytes)
         shell: pwsh
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
-          .\scripts\run_update_release_e2e.ps1 -CandidateZip "dist\releases\Organizador-$Version-windows-x64.zip" -CandidateVersion $Version
+          .\scripts\run_update_release_e2e.ps1 -CandidateZip "dist\releases\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version
         # Runs against the exact candidate bytes before anything is published,
         # so a legacy-updater incompatibility never reaches the public release.
 
@@ -85,14 +85,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
-          $Archive = "dist\releases\Organizador-$Version-windows-x64.zip"
+          $Archive = "dist\releases\SortInator-$Version-windows-x64.zip"
           $Checksum = "$Archive.sha256"
-          $Installer = "dist\releases\Organizador-$Version-Setup.exe"
+          $Installer = "dist\releases\SortInator-$Version-Setup.exe"
           gh release view "v$Version" *> $null
           if ($LASTEXITCODE -eq 0) {
             throw "Release v$Version already exists; published assets are immutable"
           }
-          gh release create "v$Version" $Archive $Checksum $Installer "$Installer.sha256" --verify-tag --generate-notes --title "Organizador v$Version" --prerelease
+          gh release create "v$Version" $Archive $Checksum $Installer "$Installer.sha256" --verify-tag --generate-notes --title "SortInator v$Version" --prerelease
           if ($LASTEXITCODE -ne 0) { throw "GitHub prerelease publication failed" }
 
       - name: Download the exact public prerelease assets
@@ -102,14 +102,14 @@ jobs:
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
           New-Item -ItemType Directory -Path e2e-public -Force | Out-Null
-          gh release download "v$Version" --dir e2e-public --pattern "Organizador-$Version-*"
+          gh release download "v$Version" --dir e2e-public --pattern "SortInator-$Version-*"
           if ($LASTEXITCODE -ne 0) { throw "Public prerelease download failed" }
-          $LocalHash = ((Get-Content -LiteralPath "dist\releases\Organizador-$Version-windows-x64.zip.sha256" -Raw).Trim() -split '\s+')[0]
-          $PublicHash = ((Get-Content -LiteralPath "e2e-public\Organizador-$Version-windows-x64.zip.sha256" -Raw).Trim() -split '\s+')[0]
+          $LocalHash = ((Get-Content -LiteralPath "dist\releases\SortInator-$Version-windows-x64.zip.sha256" -Raw).Trim() -split '\s+')[0]
+          $PublicHash = ((Get-Content -LiteralPath "e2e-public\SortInator-$Version-windows-x64.zip.sha256" -Raw).Trim() -split '\s+')[0]
           if ($LocalHash -ne $PublicHash) { throw "Public prerelease bytes differ from the tested candidate" }
-          $ActualHash = (Get-FileHash -LiteralPath "e2e-public\Organizador-$Version-windows-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $ActualHash = (Get-FileHash -LiteralPath "e2e-public\SortInator-$Version-windows-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($ActualHash -ne $PublicHash.ToLowerInvariant()) { throw "Public prerelease checksum mismatch" }
-          $SetupName = "Organizador-$Version-Setup.exe"
+          $SetupName = "SortInator-$Version-Setup.exe"
           $LocalSetupHash = (Get-FileHash -LiteralPath "dist\releases\$SetupName" -Algorithm SHA256).Hash
           $PublicSetupHash = (Get-FileHash -LiteralPath "e2e-public\$SetupName" -Algorithm SHA256).Hash
           $SetupSidecar = ((Get-Content -LiteralPath "e2e-public\$SetupName.sha256" -Raw).Trim() -split '\s+')[0]
@@ -119,7 +119,7 @@ jobs:
         shell: pwsh
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
-          .\scripts\run_update_release_e2e.ps1 -CandidateZip "e2e-public\Organizador-$Version-windows-x64.zip" -CandidateVersion $Version
+          .\scripts\run_update_release_e2e.ps1 -CandidateZip "e2e-public\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version
         # Re-verifies the bytes a user actually downloads; the candidate bytes
         # were already validated before publication.
         # On failure the prerelease stays unpublished to /releases/latest (manual

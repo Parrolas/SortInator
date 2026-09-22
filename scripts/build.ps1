@@ -19,8 +19,8 @@ elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $BuildRoot = Join-Path $OutputRoot "build"
 $AssetRoot = Join-Path $BuildRoot "assets"
-$Distribution = Join-Path $OutputRoot "Organizador"
-$Executable = Join-Path $Distribution "Organizador.exe"
+$Distribution = Join-Path $OutputRoot "SortInator"
+$Executable = Join-Path $Distribution "SortInator.exe"
 $VersionInfo = Join-Path $BuildRoot "version_info.txt"
 
 if (-not (Test-Path -LiteralPath $Python)) {
@@ -62,7 +62,7 @@ if (-not (Test-Path -LiteralPath $AppIcon)) { throw "Ícone em falta: $AppIcon" 
     --icon $AppIcon `
     --add-data ($AssetRoot + ";assets") `
     --noupx `
-    --name "Organizador" `
+    --name "SortInator" `
     --paths (Join-Path $Root "src") `
     --hidden-import "watchdog.observers.winapi" `
     --version-file $VersionInfo `
@@ -76,6 +76,14 @@ if (-not (Test-Path -LiteralPath $Executable)) {
     throw "O executável esperado não foi criado: $Executable"
 }
 
+# Transitional: update helpers from releases before the rename launch a
+# hardcoded Organizador.exe after swapping payloads. This hardlink keeps
+# over-the-air updates from those versions working; it is removed once no
+# such helper is in circulation.
+$LegacyExecutable = Join-Path $Distribution "Organizador.exe"
+Remove-Item -LiteralPath $LegacyExecutable -Force -ErrorAction SilentlyContinue
+New-Item -ItemType HardLink -Path $LegacyExecutable -Target $Executable | Out-Null
+
 if ($SigningCertificateThumbprint) {
     if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') { throw "Invalid signing thumbprint" }
     & $SignTool sign /sha1 $SigningCertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $Executable
@@ -84,7 +92,7 @@ if ($SigningCertificateThumbprint) {
     if ($LASTEXITCODE -ne 0) { throw "Application signature verification failed" }
 }
 
-$SmokeRoot = Join-Path $env:TEMP ("organizador-smoke-" + [guid]::NewGuid().ToString("N"))
+$SmokeRoot = Join-Path $env:TEMP ("sortinator-smoke-" + [guid]::NewGuid().ToString("N"))
 try {
     New-Item -ItemType Directory -Path $SmokeRoot | Out-Null
     $SmokeArguments = "--smoke-test --data-dir `"$SmokeRoot`""
@@ -122,7 +130,7 @@ foreach ($Notice in $RequiredNotices) {
 }
 
 $ManifestEncoding = New-Object System.Text.UTF8Encoding($false)
-$ManifestJson = (@{ format = 1; version = $Version; executable = "Organizador.exe"; internal_directory = "_internal" } | ConvertTo-Json -Compress) + "`n"
+$ManifestJson = (@{ format = 1; version = $Version; executable = "SortInator.exe"; internal_directory = "_internal" } | ConvertTo-Json -Compress) + "`n"
 [System.IO.File]::WriteAllText((Join-Path $Distribution "update-manifest.json"), $ManifestJson, $ManifestEncoding)
 $ManifestCheck = Get-Content -LiteralPath (Join-Path $Distribution "update-manifest.json") -Raw | ConvertFrom-Json
 if ($ManifestCheck.version -ne $Version) {
@@ -136,7 +144,7 @@ $ManagedFiles = @(Get-ChildItem -LiteralPath $Distribution -Recurse -File | ForE
 
 $ReleaseDirectory = Join-Path $OutputRoot "releases"
 New-Item -ItemType Directory -Path $ReleaseDirectory -Force | Out-Null
-$ArchiveName = "Organizador-$Version-windows-x64.zip"
+$ArchiveName = "SortInator-$Version-windows-x64.zip"
 $Archive = Join-Path $ReleaseDirectory $ArchiveName
 $Checksum = "$Archive.sha256"
 Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue

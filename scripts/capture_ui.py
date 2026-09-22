@@ -92,7 +92,7 @@ def main() -> int:
 
     application = QApplication([])
     apply_theme(application, get_theme(DEFAULT_THEME))
-    with tempfile.TemporaryDirectory(prefix="organizador-review-", dir=args.temp_dir) as raw:
+    with tempfile.TemporaryDirectory(prefix="sortinator-review-", dir=args.temp_dir) as raw:
         root = Path(raw)
         config = AppConfig(
             data_dir=root / "data",

@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not $OutputRoot) { $OutputRoot = Join-Path $Root "artifacts" }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
-$Payload = Join-Path $OutputRoot "Organizador"
+$Payload = Join-Path $OutputRoot "SortInator"
 $Manifest = Get-Content -LiteralPath (Join-Path $Payload "update-manifest.json") -Raw | ConvertFrom-Json
 $Version = $Manifest.version
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid package version" }
@@ -30,14 +30,14 @@ New-Item -ItemType Directory -Path $Releases -Force | Out-Null
 $Arguments = @("/DAppVersion=$Version", "/DPayloadDir=$Payload", "/DOutputDir=$Releases")
 if ($SigningCertificateThumbprint) {
     if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') { throw "Invalid signing thumbprint" }
-    $Signature = Get-AuthenticodeSignature -LiteralPath (Join-Path $Payload "Organizador.exe")
+    $Signature = Get-AuthenticodeSignature -LiteralPath (Join-Path $Payload "SortInator.exe")
     if ($Signature.Status -ne "Valid") { throw "Sign the application before building a signed installer" }
     $Arguments += "/DSignedBuild=1"
     $Arguments += '/Sorganizador=$q' + $SignTool + '$q sign /sha1 ' + $SigningCertificateThumbprint + ' /fd SHA256 /tr $q' + $TimestampUrl + '$q /td SHA256 $f'
 }
 & $Compiler @Arguments (Join-Path $PSScriptRoot "installer.iss")
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
-$Installer = Join-Path $Releases "Organizador-$Version-Setup.exe"
+$Installer = Join-Path $Releases "SortInator-$Version-Setup.exe"
 if ($SigningCertificateThumbprint -and (Get-AuthenticodeSignature -LiteralPath $Installer).Status -ne "Valid") {
     throw "Installer signature verification failed"
 }

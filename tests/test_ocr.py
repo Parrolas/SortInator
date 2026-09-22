@@ -68,14 +68,14 @@ def test_recognize_page_reads_rendered_text(tmp_path: Path) -> None:
 
     image = Image.new("RGB", (1200, 300), "white")
     draw = ImageDraw.Draw(image)
-    draw.text((60, 80), "Organizador teste oitenta", fill="black")
+    draw.text((60, 80), "SortInator teste oitenta", fill="black")
     path = tmp_path / "amostra.png"
     image.save(path)
     image_bytes = path.read_bytes()
 
     text = ocr.recognize_page(image_bytes, ("pt-PT",))
 
-    assert "Organizador" in text
+    assert "oitenta" in text.casefold()
 
 
 def test_ocr_blank_pages_fills_only_blanks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

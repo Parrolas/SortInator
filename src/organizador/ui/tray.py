@@ -24,9 +24,9 @@ class TrayIcon(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.tray = QSystemTrayIcon(app_icon(), self)
-        self.tray.setToolTip(_("Organizador · a preparar"))
+        self.tray.setToolTip(_("SortInator · a preparar"))
         menu = QMenu()
-        self.open_action = menu.addAction(_("Abrir Organizador"))
+        self.open_action = menu.addAction(_("Abrir SortInator"))
         self.inbox_action = menu.addAction(_("Caixa de Entrada"))
         menu.addSeparator()
         self.pause_action = menu.addAction(_("Pausar vigilância"))
@@ -78,7 +78,7 @@ class TrayIcon(QObject):
             if count
             else _("Caixa de Entrada vazia")
         )
-        self.tray.setToolTip(_("Organizador · {state}").format(state=state))
+        self.tray.setToolTip(_("SortInator · {state}").format(state=state))
 
     def set_paused(self, paused: bool) -> None:
         """Synchronise the checkable pause action without emitting a loop."""

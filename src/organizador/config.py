@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,8 +17,10 @@ try:
 except ImportError:  # pragma: no cover - only relevant outside Windows
     winreg = None  # type: ignore[assignment]
 
+LOGGER = logging.getLogger(__name__)
 
-APP_NAME = "Organizador"
+APP_NAME = "SortInator"
+LEGACY_APP_NAME = "Organizador"
 DOWNLOADS_GUID = "{374DE290-123F-4565-9164-39C4925E467B}"
 MANUAL_IMPORT_BATCH_LIMIT = 25
 DEFAULT_EXTENSIONS = (
@@ -79,6 +83,52 @@ def default_data_dir() -> Path:
     return base / APP_NAME
 
 
+def migrate_legacy_data_dir(data_dir: Path) -> str | None:
+    """Move a pre-rename data directory to the new product name once.
+
+    Returns ``None`` when there is nothing to do or the move succeeded, or a
+    message describing why the move failed. A failed move leaves the legacy
+    directory untouched and creates nothing, so the next launch retries it.
+    After a successful move a directory junction keeps the legacy path
+    working, so an older binary restored by a rollback still finds its data.
+    """
+
+    if os.name != "nt":
+        return None
+    legacy = data_dir.parent / LEGACY_APP_NAME
+    if data_dir.exists() or data_dir.is_symlink():
+        return None
+    if not legacy.is_dir() or legacy.is_symlink():
+        return None
+    try:
+        legacy.rename(data_dir)
+    except OSError as exc:
+        LOGGER.error("Could not migrate the legacy data directory", exc_info=True)
+        return str(exc) or type(exc).__name__
+    for child in sorted(data_dir.iterdir()):
+        if not child.is_file() or child.is_symlink():
+            continue
+        if child.name.startswith(f"{LEGACY_APP_NAME.casefold()}."):
+            suffix = child.name[len(LEGACY_APP_NAME) + 1 :]
+            with suppress(OSError):
+                child.rename(data_dir / f"{APP_NAME.casefold()}.{suffix}")
+    _create_legacy_data_junction(legacy, data_dir)
+    return None
+
+
+def _create_legacy_data_junction(legacy: Path, target: Path) -> None:
+    """Best-effort junction so pre-rename binaries still reach the data."""
+
+    if legacy.exists() or legacy.is_symlink():
+        return
+    try:
+        import _winapi
+
+        _winapi.CreateJunction(str(target.resolve()), str(legacy))
+    except Exception:  # pragma: no cover - compatibility nicety
+        LOGGER.warning("Could not create the legacy data junction", exc_info=True)
+
+
 def default_downloads_dir() -> Path:
     """Return the configured Windows Downloads known folder."""
 
@@ -123,13 +173,13 @@ class AppConfig:
     def database_path(self) -> Path:
         """Path to the local SQLite database."""
 
-        return self.data_dir / "organizador.db"
+        return self.data_dir / "sortinator.db"
 
     @property
     def log_path(self) -> Path:
         """Path to the rotating application log."""
 
-        return self.data_dir / "organizador.log"
+        return self.data_dir / "sortinator.log"
 
     @property
     def updates_dir(self) -> Path:

@@ -1,6 +1,6 @@
 """Exercise the exact Setup artifact in an explicitly disposable Windows account.
 
-This intentionally refuses an account with Organizador data or an installation.
+This intentionally refuses an account with SortInator data or an installation.
 Run on a clean Windows CI runner/VM, never the developer's daily-use account.
 """
 
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -18,10 +19,29 @@ from pathlib import Path
 
 import organizador.updater as updater
 from organizador import __version__
-from organizador.config import AppConfig, default_data_dir
+from organizador.config import LEGACY_APP_NAME, AppConfig, default_data_dir
 from organizador.db import Database
 from organizador.filer import FilingService
 from organizador.windows_shell import UNINSTALL_KEY
+
+
+def payload_executable(app_dir: Path) -> Path:
+    """Resolve the installed payload executable, preferring its manifest."""
+
+    manifest = app_dir / "update-manifest.json"
+    if manifest.is_file():
+        try:
+            name = json.loads(manifest.read_text(encoding="utf-8")).get("executable")
+        except (OSError, ValueError):
+            name = None
+        if isinstance(name, str) and name:
+            candidate = app_dir / name
+            if candidate.is_file():
+                return candidate
+    fallback = app_dir / "SortInator.exe"
+    if fallback.is_file():
+        return fallback
+    raise AssertionError("installed payload has no executable")
 
 
 def run(executable: Path, *arguments: str, expected: int = 0) -> None:
@@ -57,27 +77,34 @@ def main() -> None:
     data = default_data_dir()
     if not args.disposable_account:
         parser.error("This test requires --disposable-account on a clean Windows VM/CI runner")
-    if data.exists():
-        parser.error("Refusing to test in an account with existing Organizador data")
-    for key_name in (UNINSTALL_KEY, r"Software\Classes\organizador"):
+    for candidate in (data, data.parent / LEGACY_APP_NAME):
+        if candidate.exists():
+            parser.error("Refusing to test in an account with existing SortInator data")
+    for key_name in (
+        UNINSTALL_KEY,
+        r"Software\Classes\sortinator",
+        r"Software\Classes\organizador",
+    ):
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_name):
-                parser.error(
-                    "Refusing to replace an existing Organizador installation/registration"
-                )
+                parser.error("Refusing to replace an existing SortInator installation/registration")
         except FileNotFoundError:
             pass
     try:
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"
         ) as key:
-            winreg.QueryValueEx(key, "Organizador")
-        parser.error("Refusing to replace an existing Organizador login entry")
+            for value_name in ("SortInator", "Organizador"):
+                try:
+                    winreg.QueryValueEx(key, value_name)
+                except FileNotFoundError:
+                    continue
+                parser.error("Refusing to replace an existing SortInator login entry")
     except FileNotFoundError:
         pass
     verify_artifact(args.installer)
     verify_artifact(args.zip)
-    root = Path(tempfile.mkdtemp(prefix="organizador-install-e2e-"))
+    root = Path(tempfile.mkdtemp(prefix="sortinator-install-e2e-"))
     install = root / "installed"
     downloads = root / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
@@ -114,7 +141,7 @@ def main() -> None:
     run(args.installer.resolve(), *parameters, f"/LOG={root / 'install.log'}")
     uninstaller = install / "unins000.exe"
     assert uninstaller.is_file()
-    executable = install / "app" / "Organizador.exe"
+    executable = payload_executable(install / "app")
     run(executable, "--smoke-test", "--data-dir", str(data))
     assert database.inspect_schema().is_current
     run(args.installer.resolve(), *parameters, f"/LOG={root / 'reinstall.log'}")

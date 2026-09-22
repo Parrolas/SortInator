@@ -1,20 +1,20 @@
 # Windows installation and notifications
 
-The easiest download is `Organizador-<versão>-Setup.exe`. It installs for the
-current user under `%LOCALAPPDATA%\Programs\Organizador`, without requesting
-administrator rights. Close Organizador through its tray menu before installing
+The easiest download is `SortInator-<versão>-Setup.exe`. It installs for the
+current user under `%LOCALAPPDATA%\Programs\SortInator`, without requesting
+administrator rights. Close SortInator through its tray menu before installing
 or uninstalling; a transfer already in progress finishes before the app exits.
 
 Setup adds a Start Menu entry and optionally a desktop shortcut. Starting with
 Windows remains an explicit setting inside the app. Existing settings and the
-catalog in `%LOCALAPPDATA%\Organizador` are reused. Neither uninstalling nor
+catalog in `%LOCALAPPDATA%\SortInator` are reused. Neither uninstalling nor
 updating removes that data or your university and Downloads folders. A portable
 ZIP remains available; after switching to Setup, launch the installed copy from
 the Start Menu rather than the old portable copy.
 
 Click a filing notification to select the document in File Explorer. Notifications
 remain actionable for seven days, including after closing the app. For a batch
-with several destination folders, Organizador lists its files with a Show in
+with several destination folders, SortInator lists its files with a Show in
 folder action. Missing files and expired alerts produce an explanation instead
 of opening a different document. Quiet mode and Windows notification preferences
 still control whether alerts appear.
@@ -64,7 +64,7 @@ disposable installation environment; headless tests do not replace them.
 
 The release workflow also runs `scripts/run_installer_e2e.py --disposable-account`
 with `--installer` and `--zip` pointing at the candidate and its checksum files.
-It refuses accounts with existing Organizador data or registrations, and checks
+It refuses accounts with existing SortInator data or registrations, and checks
 install, catalog migration, reinstall, a real updater swap, uninstall and data
 reuse. It retains its fixture data and logs for inspection in that disposable
 account. Popup clicks and visual checks remain the interactive acceptance step.

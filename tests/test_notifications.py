@@ -80,8 +80,8 @@ def test_stale_notification_never_opens_a_replacement(
     [
         "",
         "file:///C:/Windows/cmd.exe",
-        "organizador://notification/../x",
-        "organizador://notification/" + "a" * 32 + "?cmd=x",
+        "sortinator://notification/../x",
+        "sortinator://notification/" + "a" * 32 + "?cmd=x",
     ],
 )
 def test_invalid_activation_is_rejected(database: Database, uri: str) -> None:
@@ -91,7 +91,7 @@ def test_invalid_activation_is_rejected(database: Database, uri: str) -> None:
 
 
 def test_xml_escapes_document_names_and_preserves_protocol_activation() -> None:
-    uri = "organizador://notification/" + "a" * 32
+    uri = "sortinator://notification/" + "a" * 32
     root = ElementTree.fromstring(notifications.toast_xml("A&B <notes>", "José's file", uri))
     assert root.attrib == {"activationType": "protocol", "launch": uri}
     assert root.find("./visual/binding/text").text == "A&B <notes>"  # type: ignore[union-attr]
@@ -104,7 +104,7 @@ def test_single_instance_forwards_notification_without_generic_show(
     actions: list[str] = []
     first.notification_requested.connect(actions.append)
     first.show_requested.connect(lambda: actions.append("show"))
-    uri = "organizador://notification/" + "a" * 32
+    uri = "sortinator://notification/" + "a" * 32
     try:
         assert first.acquire()
         results: list[bool] = []
@@ -141,11 +141,11 @@ def test_real_winrt_toast_object_has_activation_and_expiry(monkeypatch: pytest.M
     class Manager:
         @staticmethod
         def create_toast_notifier_with_id(app_id: str) -> Notifier:
-            assert app_id == "Parrolas.Organizador"
+            assert app_id == "Parrolas.SortInator"
             return Notifier()
 
     monkeypatch.setattr(native, "ToastNotificationManager", Manager)
-    uri = "organizador://notification/" + "c" * 32
+    uri = "sortinator://notification/" + "c" * 32
     assert notifications.show_toast("File organized", "Notes & exercises", uri)
     assert captured[0].expiration_time is not None
     assert captured[0].group == "filed"

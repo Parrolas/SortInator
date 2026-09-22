@@ -1,1 +1,1 @@
-"""PySide6 user interface for Organizador."""
+"""PySide6 user interface for SortInator."""
