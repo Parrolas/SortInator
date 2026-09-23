@@ -3348,3 +3348,58 @@ def test_handshake_transient_validation_failure_restores_quarantined_bundle(
     finally:
         updater.abort_update_transaction(transaction)
         _close_controller(qt_app, controller)
+
+
+def test_elided_label_keeps_the_full_text_in_its_tooltip(qt_app: QApplication) -> None:
+    from PySide6.QtWidgets import QSizePolicy
+
+    from organizador.ui.widgets import ElidedLabel
+
+    long_name = "MAT101_ficha_04_limites_e_continuidade_exercicios_resolvidos.pdf"
+    elided = ElidedLabel(long_name, "RowTitle")
+    elided.resize(80, 24)
+
+    assert elided.toolTip() == long_name
+    assert elided.accessibleName() == long_name
+    assert elided.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+    assert not elided.grab().isNull()
+
+
+def test_home_page_scrolls_instead_of_squeezing_rows(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+    filer: FilingService,
+) -> None:
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    from organizador.ui.pages import HomePage
+    from organizador.ui.widgets import PathActionRow
+
+    for index in range(7):
+        source = app_config.downloads_dir / f"ficha_{index:02d}.pdf"
+        source.write_bytes(b"content" * 20)
+        item = filer.ingest(source)
+        assert item is not None
+        filer.file_document(item.id, subject.id, "Exercícios", f"ficha_{index:02d}.pdf")
+
+    window = QWidget()
+    page = HomePage(database)
+    outer = QVBoxLayout(window)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.addWidget(page)
+    window.resize(1180, 420)
+    window.show()
+    try:
+        page.refresh(watching=True, paused=False)
+        QTest.qWait(60)
+
+        rows = page.findChildren(PathActionRow)
+        assert rows
+        title = rows[0].title_label
+        assert title.height() >= title.fontMetrics().height()
+        assert page.body_area.verticalScrollBar().maximum() > 0
+    finally:
+        window.close()

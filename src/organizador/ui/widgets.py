@@ -203,6 +203,34 @@ class EmptyState(QFrame):
         layout.addStretch(1)
 
 
+class ElidedLabel(QLabel):
+    """Keep full plain text accessible while painting a single elided line.
+
+    The label never demands its full text width from a layout, so long file
+    names shrink instead of clipping their neighbours; the full text stays in
+    the tooltip and the accessible name.
+    """
+
+    def __init__(self, text: str, role: str = "RowTitle") -> None:
+        super().__init__(text)
+        self.setObjectName(role)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        del event
+        painter = QPainter(self)
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        text = self.fontMetrics().elidedText(
+            self.text(), Qt.TextElideMode.ElideRight, self.contentsRect().width()
+        )
+        painter.drawText(self.contentsRect(), self.alignment(), text)
+
+
 class PathActionRow(QFrame):
     """Compact file row with callback-backed actions."""
 
@@ -221,10 +249,10 @@ class PathActionRow(QFrame):
         row.setSpacing(12)
         copy = QVBoxLayout()
         copy.setSpacing(2)
-        title_label = label(title, "RowTitle")
-        title_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        copy.addWidget(title_label)
-        copy.addWidget(label(detail, "Muted"))
+        self.title_label = ElidedLabel(title, "RowTitle")
+        copy.addWidget(self.title_label)
+        self.detail_label = ElidedLabel(detail, "Muted")
+        copy.addWidget(self.detail_label)
         row.addLayout(copy, 1)
         open_button = button(_("Abrir"), variant="quiet")
         open_button.clicked.connect(lambda: open_callback(path))

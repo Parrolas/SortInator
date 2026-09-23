@@ -46,6 +46,7 @@ from organizador.recovery import USER_MARKER, BundleInfo
 from organizador.ui import theme as ui_theme
 from organizador.ui.dialogs import TaskDialog
 from organizador.ui.widgets import (
+    ElidedLabel,
     EmptyState,
     PageHeading,
     PathActionRow,
@@ -109,7 +110,14 @@ class HomePage(QWidget):
     def __init__(self, database: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.database = database
-        layout = _page_layout(self)
+        page = QVBoxLayout(self)
+        page.setContentsMargins(0, 0, 0, 0)
+        self.body_area = QScrollArea()
+        self.body_area.setWidgetResizable(True)
+        self.body_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body_area.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        layout = _page_layout(body)
         open_button = button(_("Abrir pasta Universidade"))
         open_button.clicked.connect(self.open_university)
         layout.addWidget(
@@ -170,6 +178,8 @@ class HomePage(QWidget):
         columns.addWidget(activity_panel, 1, 0, 1, 2)
         columns.setRowStretch(0, 1)
         layout.addLayout(columns, 1)
+        self.body_area.setWidget(body)
+        page.addWidget(self.body_area)
 
     def refresh(self, *, watching: bool, paused: bool) -> None:
         """Refresh the operational summary."""
@@ -478,8 +488,7 @@ class InboxPage(QWidget):
 
         copy = QVBoxLayout()
         copy.setSpacing(3)
-        title = label(item.original_name, "RowTitle")
-        title.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        title = ElidedLabel(item.original_name, "RowTitle")
         copy.addWidget(title)
         if item.status == "recovery":
             metadata = _("Recuperação manual necessária  ·  {size}  ·  {when}").format(
@@ -495,7 +504,7 @@ class InboxPage(QWidget):
                 suggestion=suggestion,
                 kind=item.suggested_kind,
             )
-        copy.addWidget(label(metadata, "Muted"))
+        copy.addWidget(ElidedLabel(metadata, "Muted"))
         if item.last_error:
             error = label(item.last_error, "ErrorText")
             error.setWordWrap(True)
