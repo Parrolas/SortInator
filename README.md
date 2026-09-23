@@ -11,7 +11,7 @@ notificação](#área-de-notificação) · [Cópias de
 segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidade) ·
 [Atualização e reversão](#atualização-e-reversão) ·
 [Desinstalação](#desinstalação) · [Limitações atuais](#limitações-atuais) ·
-[Contribuir](#contribuir) · [Licenças](#licenças)
+[Contribuir](#contribuir) · [Política de assinatura de código](#política-de-assinatura-de-código) · [Licenças](#licenças)
 
 ## Vídeo
 
@@ -299,6 +299,27 @@ As instruções de desenvolvimento, build e publicação estão em
 [CONTRIBUTING.md](CONTRIBUTING.md). O
 [roteiro de uma semana de uso](docs/daily-use-checklist.md) ajuda a registar
 problemas concretos antes de escolher a próxima melhoria.
+
+## Política de assinatura de código
+
+**Code signing policy.** Free code signing provided by SignPath.io, certificate by
+SignPath Foundation.
+
+As versões publicadas do SortInator são assinadas digitalmente através do programa
+de código aberto da SignPath Foundation, que verifica que cada binário foi
+construído a partir deste repositório. A chave privada do certificado é gerada e
+guardada no módulo de segurança (HSM) da SignPath; nunca sai de lá.
+
+Funções da equipa (todas desempenhadas por José Parrolas,
+[@Parrolas](https://github.com/Parrolas)):
+
+- Committers e revisores: o mantenedor do repositório.
+- Aprovadores: o mantenedor do repositório.
+
+Política de privacidade: [PRIVACY.md](PRIVACY.md) — a aplicação funciona
+localmente e não transfere informação para outros sistemas em rede, exceto a
+verificação de atualizações no GitHub quando está ativa. Código de conduta:
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Licenças
 
