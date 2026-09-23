@@ -51,7 +51,8 @@ function Get-ProductVersion([string]$ExePath) {
 }
 
 function Get-PayloadExecutable([string]$AppDir) {
-    # Prefer the manifest so renamed executables keep validating.
+    # Prefer the manifest so renamed executables keep validating. Returns
+    # $null while a swap window leaves the folder momentarily empty.
     $ManifestPath = Join-Path $AppDir "update-manifest.json"
     if (Test-Path -LiteralPath $ManifestPath) {
         try {
@@ -68,7 +69,7 @@ function Get-PayloadExecutable([string]$AppDir) {
         $Candidate = Join-Path $AppDir $Fallback
         if (Test-Path -LiteralPath $Candidate) { return $Candidate }
     }
-    throw "No payload executable found under $AppDir"
+    return $null
 }
 
 function Get-SandboxProcessIds {
@@ -328,7 +329,10 @@ try {
     }
     Write-Evidence $LaunchOut
 
-    Wait-ForCondition { (Get-ProductVersion (Get-PayloadExecutable $Install)) -eq $CandidateVersion } 60 "active exe becoming $CandidateVersion"
+    Wait-ForCondition {
+        $Exe = Get-PayloadExecutable $Install
+        $Exe -and ((Get-ProductVersion $Exe) -eq $CandidateVersion)
+    } 60 "active exe becoming $CandidateVersion"
     $OldDir = Join-Path $Sandbox "install\Organizador.old"
     Wait-ForCondition { Test-Path -LiteralPath (Join-Path $OldDir "Organizador.exe") } 20 "rollback folder"
     if ((Get-ProductVersion (Join-Path $OldDir "Organizador.exe")) -ne "0.6.1") {
@@ -359,7 +363,9 @@ try {
     if ($Alive.Count -gt 0) { Fail ("Candidate did not shut down: " + ($Alive -join ",")) }
 
     Write-Evidence "Candidate smoke run"
-    $CandidateSmoke = Start-Process -FilePath (Get-PayloadExecutable $Install) -ArgumentList ('--smoke-test --data-dir "' + $SmokeData + '"') -WindowStyle Hidden -Wait -PassThru
+    $CandidateExe = Get-PayloadExecutable $Install
+    if (-not $CandidateExe) { Fail "Active payload has no executable" }
+    $CandidateSmoke = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $SmokeData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($CandidateSmoke.ExitCode -ne 0) { Fail "Candidate smoke run failed" }
 
     $Sentinel = Get-Content -LiteralPath (Join-Path $FakeLocal "Organizador\sentinel.txt") -Raw
@@ -368,6 +374,7 @@ try {
     # 8. On-demand backup and staged restore through the candidate CLI.
     Write-Evidence "Backup and restore gate"
     $CandidateExe = Get-PayloadExecutable $Install
+    if (-not $CandidateExe) { Fail "Active payload has no executable" }
     $InitRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($InitRun.ExitCode -ne 0) { Fail "Candidate profile initialisation failed" }
     $FirstDatabase = Join-Path $FirstData "sortinator.db"
