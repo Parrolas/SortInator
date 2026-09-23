@@ -54,7 +54,10 @@ Portuguese diacritics and long file names must be tested at the shipping DPI.
 - Main window: 1180 × 760 default, 980 × 660 minimum.
 - Sidebar: fixed 224 px; content is fluid.
 - Page inset: 34 px horizontal, 28 px top.
-- Home: one state strip, then direct docket rows in a 3:2 column split.
+- Home: one state strip, then a capped preview of the newest five documents
+  (with a quiet link to the full search) beside the next five deadlines in a
+  3:2 column split. The page scrolls invisibly only as a fallback for
+  unusual scaling; long file names elide with the full name in a tooltip.
 - Lists: 9 px between records; no enclosing card around a list of cards.
 - Filing prompt: fixed 570 px, positioned 18 px above the bottom-left of the
   cursor's Windows work area so native notifications cannot cover it.

@@ -3365,41 +3365,89 @@ def test_elided_label_keeps_the_full_text_in_its_tooltip(qt_app: QApplication) -
     assert not elided.grab().isNull()
 
 
-def test_home_page_scrolls_instead_of_squeezing_rows(
+@pytest.mark.parametrize(
+    "language,recent_title,link_text",
+    [
+        ("pt", "Organizados recentemente", "Ver na pesquisa"),
+        ("en", "Recently filed", "View in search"),
+    ],
+)
+def test_home_page_caps_lists_and_fits_without_clipping(
     qt_app: QApplication,
     app_config: AppConfig,
     database: Database,
     subject: Subject,
     filer: FilingService,
+    language: str,
+    recent_title: str,
+    link_text: str,
 ) -> None:
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QPushButton
 
-    from organizador.ui.pages import HomePage
+    from organizador.i18n import set_language
+    from organizador.ui.main_window import MainWindow
     from organizador.ui.widgets import PathActionRow
 
-    for index in range(7):
-        source = app_config.downloads_dir / f"ficha_{index:02d}.pdf"
-        source.write_bytes(b"content" * 20)
-        item = filer.ingest(source)
-        assert item is not None
-        filer.file_document(item.id, subject.id, "Exercícios", f"ficha_{index:02d}.pdf")
-
-    window = QWidget()
-    page = HomePage(database)
-    outer = QVBoxLayout(window)
-    outer.setContentsMargins(0, 0, 0, 0)
-    outer.addWidget(page)
-    window.resize(1180, 420)
-    window.show()
+    set_language(language)
     try:
-        page.refresh(watching=True, paused=False)
-        QTest.qWait(60)
+        for index in range(7):
+            name = f"AB_ConceitosBasicos_Exercicios_{index:02d}_com_resolucoes.pdf"
+            source = app_config.downloads_dir / name
+            source.write_bytes(b"content" * 20)
+            item = filer.ingest(source)
+            assert item is not None
+            filer.file_document(item.id, subject.id, "Exercícios", name)
+        for index in range(6):
+            database.add_task(
+                f"Tarefa de teste número {index:02d}",
+                subject.id,
+                date.today() + timedelta(days=index + 1),
+            )
 
-        rows = page.findChildren(PathActionRow)
-        assert rows
-        title = rows[0].title_label
-        assert title.height() >= title.fontMetrics().height()
-        assert page.body_area.verticalScrollBar().maximum() > 0
+        window = MainWindow(database, app_config)
+        window.show()
+        try:
+            emitted: list[bool] = []
+            window.home_page.show_search.connect(lambda: emitted.append(True))
+
+            window.resize(1180, 760)
+            window.refresh_all(watching=True, paused=False)
+            QTest.qWait(80)
+            page = window.home_page
+
+            rows = page.findChildren(PathActionRow)
+            assert len(rows) == 5
+            assert page.body_area.verticalScrollBar().maximum() == 0
+            for row in rows:
+                title = row.title_label
+                assert title.height() >= title.fontMetrics().height()
+                assert title.toolTip()
+
+            titles = [
+                item.text()
+                for item in page.findChildren(QLabel)
+                if item.objectName() == "SectionTitle"
+            ]
+            assert recent_title in titles
+            links = [
+                control for control in page.findChildren(QPushButton) if control.text() == link_text
+            ]
+            assert len(links) == 1
+            links[0].click()
+            assert emitted == [True]
+
+            # At the minimum window size the rows still keep their natural
+            # height; the hidden scroll bar is the fallback, never visible.
+            window.resize(980, 660)
+            window.refresh_all(watching=True, paused=False)
+            QTest.qWait(80)
+            assert len(page.findChildren(PathActionRow)) == 5
+            for row in page.findChildren(PathActionRow):
+                title = row.title_label
+                assert title.height() >= title.fontMetrics().height()
+        finally:
+            window.allow_close = True
+            window.close()
     finally:
-        window.close()
+        set_language("pt")

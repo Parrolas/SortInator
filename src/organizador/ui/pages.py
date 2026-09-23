@@ -106,6 +106,7 @@ class HomePage(QWidget):
     open_path = Signal(object)
     open_university = Signal()
     show_inbox = Signal()
+    show_search = Signal()
 
     def __init__(self, database: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -115,6 +116,9 @@ class HomePage(QWidget):
         self.body_area = QScrollArea()
         self.body_area.setWidgetResizable(True)
         self.body_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # The lists below are capped so the page fits on screen; the hidden
+        # scroll bar is only a fallback for unusual scaling, never visible.
+        self.body_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.body_area.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
         layout = _page_layout(body)
@@ -148,7 +152,14 @@ class HomePage(QWidget):
         recent_panel_layout = QVBoxLayout(recent_panel)
         recent_panel_layout.setContentsMargins(0, 7, 8, 0)
         recent_panel_layout.setSpacing(11)
-        recent_panel_layout.addWidget(label("Organizados recentemente", "SectionTitle"))
+        recent_header = QHBoxLayout()
+        recent_header.setContentsMargins(0, 0, 0, 0)
+        recent_header.setSpacing(8)
+        recent_header.addWidget(label(_("Organizados recentemente"), "SectionTitle"), 1)
+        self.search_link = button(_("Ver na pesquisa"), variant="quiet")
+        self.search_link.clicked.connect(self.show_search.emit)
+        recent_header.addWidget(self.search_link)
+        recent_panel_layout.addLayout(recent_header)
         self.recent_layout = QVBoxLayout()
         self.recent_layout.setSpacing(8)
         recent_panel_layout.addLayout(self.recent_layout)
@@ -205,7 +216,7 @@ class HomePage(QWidget):
         )
 
         clear_layout(self.recent_layout)
-        recent = self.database.list_recent_files(limit=7)
+        recent = self.database.list_recent_files(limit=5)
         if not recent:
             empty_copy = label(
                 _(
@@ -234,7 +245,7 @@ class HomePage(QWidget):
                 )
 
         clear_layout(self.deadline_layout)
-        tasks = self.database.list_tasks(include_completed=False)[:6]
+        tasks = self.database.list_tasks(include_completed=False)[:5]
         if not tasks:
             empty_copy = label(
                 _(

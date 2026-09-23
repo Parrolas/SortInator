@@ -9,6 +9,8 @@ runtime, and the parity tests keep the three languages aligned.
 from __future__ import annotations
 
 EN_STRINGS: dict[str, str] = {
+    "Organizados recentemente": "Recently filed",
+    "Ver na pesquisa": "View in search",
     "Não foi possível atualizar a pasta de dados": "Could not update the data folder",
     "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "The data from the previous version could not be moved to the new folder. Close any older version that is running and try again. No file was changed.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "The update helper may still be running. Restart the application and try again.",
@@ -926,6 +928,8 @@ EN_STRINGS: dict[str, str] = {
 }
 
 ES_STRINGS: dict[str, str] = {
+    "Organizados recentemente": "Archivados recientemente",
+    "Ver na pesquisa": "Ver en la búsqueda",
     "Não foi possível atualizar a pasta de dados": "No se pudo actualizar la carpeta de datos",
     "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "Los datos de la versión anterior no se pudieron mover a la nueva carpeta. Cierra cualquier versión antigua en ejecución e inténtalo de nuevo. No se cambió ningún archivo.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "El asistente de actualización puede seguir ejecutándose. Reinicia la aplicación e inténtalo de nuevo.",
@@ -1884,6 +1888,8 @@ ES_STRINGS: dict[str, str] = {
 }
 
 FR_STRINGS: dict[str, str] = {
+    "Organizados recentemente": "Récemment rangés",
+    "Ver na pesquisa": "Voir dans la recherche",
     "Não foi possível atualizar a pasta de dados": "Impossible de mettre à jour le dossier de données",
     "Os dados da versão anterior não puderam ser movidos para a nova pasta. Fecha qualquer versão antiga em execução e tenta novamente. Nenhum ficheiro foi alterado.\n\n{error}": "Les données de la version précédente n'ont pas pu être déplacées vers le nouveau dossier. Ferme toute version plus ancienne en cours d'exécution et réessaie. Aucun fichier n'a été modifié.\n\n{error}",
     "O assistente de atualização pode ainda estar em execução. Reinicia a aplicação e tenta novamente.": "L'assistant de mise à jour est peut-être encore en cours. Redémarre l'application et réessaie.",

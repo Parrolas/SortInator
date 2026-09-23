@@ -625,6 +625,7 @@ class AppController(QObject):
             lambda: self._open_path(self.config.university_root)
         )
         self.main_window.home_page.show_inbox.connect(lambda: self.show_main("inbox"))
+        self.main_window.home_page.show_search.connect(lambda: self.show_main("pesquisa"))
         self.main_window.inbox_page.organise_requested.connect(self._organise_item)
         self.main_window.inbox_page.organise_selection_requested.connect(self._organise_selection)
         self.main_window.inbox_page.return_requested.connect(self._return_item)
