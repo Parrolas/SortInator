@@ -15,7 +15,11 @@ segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidad
 
 ## Vídeo
 
-[![Vídeo de apresentação do SortInator](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/21e679f1-ff63-4f97-862c-fb5d0df843c2)
+[![Vídeo de apresentação do SortInator](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/e362318e-088a-42be-adcc-72284971a93a)
+
+
+
+
 
 *Vídeo de apresentação — 22 segundos. Clica para ver com música.*
 
