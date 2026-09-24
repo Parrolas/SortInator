@@ -2,6 +2,16 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.18.1 - 2026-09-24
+
+### Fixed
+
+- The Home page no longer squeezes its lists when the window is short: the
+  newest documents and the next deadlines are capped at five each, so the
+  whole page fits on screen even with a long list. Long file names elide with
+  the full name in a tooltip, and the "Organizados recentemente" heading and
+  the new "Ver na pesquisa" link follow the selected language.
+
 ## 0.18.0 - 2026-09-20
 
 ### Changed
