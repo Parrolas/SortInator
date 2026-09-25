@@ -54,6 +54,65 @@ SECTION_NUMBERING_TERMS = frozenset(
         "secao",
     }
 )
+WEAK_CODE_STOPWORDS = frozenset(
+    {
+        "de",
+        "da",
+        "do",
+        "das",
+        "dos",
+        "a",
+        "o",
+        "as",
+        "os",
+        "e",
+        "em",
+        "no",
+        "na",
+        "nos",
+        "nas",
+        "por",
+        "para",
+        "com",
+        "sem",
+        "uma",
+        "um",
+        "que",
+        "se",
+        "ao",
+        "the",
+        "an",
+        "of",
+        "to",
+        "in",
+        "on",
+        "and",
+        "or",
+        "for",
+        "with",
+    }
+)
+
+
+def _is_weak_code_without_number(code: str, normalised_name: str) -> bool:
+    """Tell whether a short/common-word code match is noise.
+
+    Codes like ``DE`` or ``A`` appear as ordinary words in most filenames;
+    they only earn the code bonus next to a number (``DE 101``), where the
+    pairing reads as a course reference instead of prose.
+    """
+
+    if len(code) >= 3 and code not in WEAK_CODE_STOPWORDS:
+        return False
+    return (
+        re.search(
+            rf"(?:^| )\d+ {re.escape(code)}(?: |$)|(?:^| ){re.escape(code)} \d+(?: |$)",
+            normalised_name,
+        )
+        is None
+    )
+
+
 Choice = TypeVar("Choice", int, str)
 
 KIND_TERMS: dict[str, tuple[str, ...]] = {
@@ -110,9 +169,13 @@ def guess_filing(
         score = int(fuzz.WRatio(normalised_name, subject_name) * 0.42)
         if subject_name and subject_name in normalised_name:
             score += 55
-        if code and (
-            code in tokens
-            or re.search(r"\b" + re.escape(code) + r"\b", normalised_name) is not None
+        if (
+            code
+            and (
+                code in tokens
+                or re.search(r"\b" + re.escape(code) + r"\b", normalised_name) is not None
+            )
+            and not _is_weak_code_without_number(code, normalised_name)
         ):
             score += 90
         for keyword in subject.keywords:
@@ -121,7 +184,7 @@ def guess_filing(
                 continue
             if normalised_keyword in tokens:
                 score += 72
-            elif normalised_keyword in normalised_name:
+            elif len(normalised_keyword) >= 3 and normalised_keyword in normalised_name:
                 score += 44
         if score > best_score:
             best_score = score

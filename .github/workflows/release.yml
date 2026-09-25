@@ -48,10 +48,12 @@ jobs:
 
       - name: Verify tag matches package version
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
-          if ("v$Version" -ne "${{ github.ref_name }}") {
-            throw "Tag ${{ github.ref_name }} does not match package version v$Version"
+          if ("v$Version" -ne $env:RELEASE_TAG) {
+            throw "Tag $env:RELEASE_TAG does not match package version v$Version"
           }
 
       - name: Build, test and smoke-test package
@@ -76,8 +78,11 @@ jobs:
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
           .\scripts\run_update_release_e2e.ps1 -CandidateZip "dist\releases\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version
+          .\scripts\run_update_release_e2e.ps1 -CandidateZip "dist\releases\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version -LegacyTag "v0.17.1" -LegacyZipName "Organizador-0.17.1-windows-x64.zip"
         # Runs against the exact candidate bytes before anything is published,
         # so a legacy-updater incompatibility never reaches the public release.
+        # Both baselines run: v0.6.1 proves the oldest updater, v0.17.1 the
+        # closest pre-rename client (which also carries the profile dir).
 
       - name: Publish prerelease assets
         shell: pwsh
@@ -88,11 +93,19 @@ jobs:
           $Archive = "dist\releases\SortInator-$Version-windows-x64.zip"
           $Checksum = "$Archive.sha256"
           $Installer = "dist\releases\SortInator-$Version-Setup.exe"
+          # Pre-rename clients only discover Organizador-<ver>-windows-x64.zip:
+          # publish a byte-identical alias so 0.17.x can begin the update.
+          $ArchiveHash = ((Get-Content -LiteralPath $Checksum -Raw).Trim() -split '\s+')[0]
+          $LegacyArchive = "dist\releases\Organizador-$Version-windows-x64.zip"
+          $LegacyChecksum = "$LegacyArchive.sha256"
+          Copy-Item -LiteralPath $Archive -Destination $LegacyArchive -Force
+          $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText($LegacyChecksum, "$ArchiveHash  Organizador-$Version-windows-x64.zip`n", $Utf8NoBom)
           gh release view "v$Version" *> $null
           if ($LASTEXITCODE -eq 0) {
             throw "Release v$Version already exists; published assets are immutable"
           }
-          gh release create "v$Version" $Archive $Checksum $Installer "$Installer.sha256" --verify-tag --generate-notes --title "SortInator v$Version" --prerelease
+          gh release create "v$Version" $Archive $Checksum $Installer "$Installer.sha256" $LegacyArchive $LegacyChecksum --verify-tag --generate-notes --title "SortInator v$Version" --prerelease
           if ($LASTEXITCODE -ne 0) { throw "GitHub prerelease publication failed" }
 
       - name: Download the exact public prerelease assets
@@ -114,12 +127,20 @@ jobs:
           $PublicSetupHash = (Get-FileHash -LiteralPath "e2e-public\$SetupName" -Algorithm SHA256).Hash
           $SetupSidecar = ((Get-Content -LiteralPath "e2e-public\$SetupName.sha256" -Raw).Trim() -split '\s+')[0]
           if ($LocalSetupHash -ne $PublicSetupHash -or $PublicSetupHash -ne $SetupSidecar) { throw "Public installer checksum mismatch" }
+          gh release download "v$Version" --dir e2e-public --pattern "Organizador-$Version-*"
+          if ($LASTEXITCODE -ne 0) { throw "Public legacy alias download failed" }
+          $PublicLegacyZip = "e2e-public\Organizador-$Version-windows-x64.zip"
+          $PublicLegacyHash = (Get-FileHash -LiteralPath $PublicLegacyZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $PublicLegacySidecar = ((Get-Content -LiteralPath "$PublicLegacyZip.sha256" -Raw).Trim() -split '\s+')[0]
+          if ($PublicLegacyHash -ne $ActualHash) { throw "Public legacy alias bytes differ" }
+          if ($PublicLegacySidecar.ToLowerInvariant() -ne $PublicHash) { throw "Public legacy alias checksum mismatch" }
 
       - name: Legacy update end-to-end gate (public bytes)
         shell: pwsh
         run: |
           $Version = (& .\.venv\Scripts\python.exe -c "from organizador import __version__; print(__version__)").Trim()
           .\scripts\run_update_release_e2e.ps1 -CandidateZip "e2e-public\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version
+          .\scripts\run_update_release_e2e.ps1 -CandidateZip "e2e-public\SortInator-$Version-windows-x64.zip" -CandidateVersion $Version -LegacyTag "v0.17.1" -LegacyZipName "Organizador-0.17.1-windows-x64.zip"
         # Re-verifies the bytes a user actually downloads; the candidate bytes
         # were already validated before publication.
         # On failure the prerelease stays unpublished to /releases/latest (manual

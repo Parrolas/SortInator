@@ -236,3 +236,11 @@ def test_smoke_activation_skips_machine_integration(
         controller.indexer.shutdown()
         controller.main_window.allow_close = True
         controller.main_window.close()
+
+
+def test_pre_rename_notification_uri_still_resolves(database: Database) -> None:
+    uri = notifications.save_action(database, [])
+    legacy_uri = uri.replace("sortinator://", "organizador://", 1)
+
+    assert notifications.notification_token(legacy_uri) is not None
+    assert notifications.resolve_action(database, legacy_uri) == ([], False)

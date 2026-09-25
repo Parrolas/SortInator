@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$LegacyVersion = $LegacyTag -replace '^v', ''
+if ($LegacyVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Legacy tag $LegacyTag has no MAJOR.MINOR.PATCH version" }
 $Root = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $Python)) { $Python = "python" }
@@ -94,7 +96,7 @@ function Wait-ForCondition([scriptblock]$Predicate, [int]$TimeoutSeconds, [strin
     Fail "Timed out waiting for: $What"
 }
 
-function Invoke-LegacyPython([string]$Name, [string]$Code, [hashtable]$ExtraEnv) {
+function Invoke-LegacyPython([string]$Name, [string]$Code, [hashtable]$ExtraEnv, [string[]]$DriverArgs = @()) {
     # PowerShell 5.1 strips embedded double quotes from native arguments, so the
     # driver is staged as a file instead of passed through -c (works on 5.1 and 7).
     $DriverDir = Join-Path $Sandbox "drivers"
@@ -114,7 +116,7 @@ function Invoke-LegacyPython([string]$Name, [string]$Code, [hashtable]$ExtraEnv)
         [System.Environment]::SetEnvironmentVariable("PYTHONNOUSERSITE", "1")
         [System.Environment]::SetEnvironmentVariable("SORTINATOR_E2E_SANDBOX", $Sandbox)
         foreach ($Key in $ExtraEnv.Keys) { [System.Environment]::SetEnvironmentVariable($Key, $ExtraEnv[$Key]) }
-        $Output = & $Python $DriverPath 2>&1
+        $Output = & $Python $DriverPath @DriverArgs 2>&1
         if ($LASTEXITCODE -ne 0) { Fail ("Legacy python driver $Name failed:`n" + ($Output -join "`n")) }
         return ($Output -join "`n")
     }
@@ -157,7 +159,18 @@ sandbox = Path(os.environ["SORTINATOR_E2E_SANDBOX"])
 app = sandbox / "install" / "Organizador"
 z = L.download_and_verify(os.environ["SORTINATOR_E2E_ZIP"], os.environ["SORTINATOR_E2E_SHA"], sandbox / "dl")
 staging = L.extract_to_staging(z, L.staging_directory(app))
-script = L.write_swap_script(app, staging)
+if hasattr(L, "create_update_transaction"):
+    # Production controllers stamp the TARGET version; the compat wrapper
+    # stamps the running one, which the handshake would rightly reject.
+    tx = L.create_update_transaction(
+        app,
+        os.environ["SORTINATOR_E2E_VERSION"],
+        data_dir=Path(os.environ["SORTINATOR_E2E_DATADIR"]),
+        staging_dir=staging,
+    )
+    script = L.write_update_helper(tx)
+else:
+    script = L.write_swap_script(app, staging)
 print("SCRIPT:" + str(script))
 '@
 
@@ -170,11 +183,31 @@ L.launch_swap(Path(os.environ["SORTINATOR_E2E_SCRIPT"]))
 print("LAUNCHED")
 '@
 
+$SeedCode = @'
+import json, os, sys
+sys.path.insert(0, os.environ["SORTINATOR_E2E_SANDBOX"] + "\\legacy-src\\src")
+from pathlib import Path
+from organizador.db import Database
+sandbox = Path(os.environ["SORTINATOR_E2E_SANDBOX"])
+data = sandbox / "data-first"
+(data / "settings.json").write_text(json.dumps({"initialized": True}), encoding="utf-8")
+database = Database(data / "organizador.db")
+if database.count_subjects() == 0:
+    database.add_subject("Biologia", "BIO", "#000000", [], "BIO")
+print("SEEDED subjects=%d" % database.count_subjects())
+'@
+
 $SentinelCode = @'
 import os, sqlite3
 sandbox = os.environ["SORTINATOR_E2E_SANDBOX"]
 action = os.environ.get("SORTINATOR_E2E_SENTINEL_ACTION", "")
-db = os.path.join(sandbox, "data-first", "sortinator.db")
+for _name in ("sortinator.db", "organizador.db"):
+    _candidate = os.path.join(sandbox, "data-first", _name)
+    if os.path.exists(_candidate):
+        db = _candidate
+        break
+else:
+    raise SystemExit("no profile database in data-first")
 connection = sqlite3.connect(db)
 try:
     if action == "setup":
@@ -248,8 +281,8 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $Install "Organizador.exe"))) {
         Fail "Legacy install has no exe"
     }
-    if ((Get-ProductVersion (Join-Path $Install "Organizador.exe")) -ne "0.6.1") {
-        Fail "Legacy install is not 0.6.1"
+    if ((Get-ProductVersion (Join-Path $Install "Organizador.exe")) -ne $LegacyVersion) {
+        Fail "Legacy install is not $LegacyVersion"
     }
     New-Item -ItemType Directory -Path $LegacySrc | Out-Null
     # PowerShell 5.1 corrupts binary pipes, so stage through a file (works on 5.1 and 7).
@@ -261,7 +294,7 @@ try {
     Remove-Item -LiteralPath $LegacyTar -Force -ErrorAction SilentlyContinue
     $Provenance = Invoke-LegacyPython "provenance" $ProvenanceCode @{}
     Write-Evidence ("Legacy provenance: " + ($Provenance -replace "`n", " / "))
-    if ($Provenance -notlike "*legacy-src*" -or $Provenance -notlike "*0.6.1*") {
+    if ($Provenance -notlike "*legacy-src*" -or $Provenance -notlike "*$LegacyVersion*") {
         Fail "Legacy python did not resolve to the isolated $LegacyTag sources"
     }
 
@@ -269,6 +302,13 @@ try {
     Write-Evidence "Legacy smoke run"
     $Smoke = Start-Process -FilePath (Join-Path $Install "Organizador.exe") -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($Smoke.ExitCode -ne 0) { Fail "Legacy smoke run failed" }
+    # A real updater has a configured profile; the synthetic legacy one
+    # needs initialized settings plus a subject, otherwise the relaunched
+    # candidate blocks on first-run onboarding and never shakes hands.
+    Write-Evidence "Seeding configured legacy profile"
+    $SeedOut = Invoke-LegacyPython "seed" $SeedCode @{}
+    Write-Evidence $SeedOut
+    if ($SeedOut -notlike "*SEEDED*") { Fail "Legacy profile seeding failed" }
 
     # 5. A corrupt payload must never reach the swap.
     Write-Evidence "Corrupt-payload gate"
@@ -294,10 +334,14 @@ try {
     $CandidateSha = "$CandidateZip.sha256"
     if (-not (Test-Path -LiteralPath $CandidateSha)) { Fail "Candidate checksum sidecar is missing" }
     $OldExe = Start-Process -FilePath (Join-Path $Install "Organizador.exe") -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -PassThru
+    # The legacy transaction carries the profile dir (production path), so
+    # the relaunched candidate must adopt the legacy catalogue in place.
     $PrepareOut = Invoke-LegacyPython "prepare" $PrepareCode @{
         "SORTINATOR_E2E_ZIP" = ([System.Uri]$CandidateZip).AbsoluteUri
         "SORTINATOR_E2E_SHA" = ([System.Uri]$CandidateSha).AbsoluteUri
-    }
+        "SORTINATOR_E2E_VERSION" = $CandidateVersion
+        "SORTINATOR_E2E_DATADIR" = $FirstData
+    } @("--data-dir", $FirstData)
     $ScriptLine = ($PrepareOut -split "`n" | Where-Object { $_ -like "SCRIPT:*" } | Select-Object -First 1)
     if (-not $ScriptLine) { Fail "Legacy preparation produced no swap script" }
     $SwapScript = $ScriptLine.Substring(7)
@@ -333,15 +377,34 @@ try {
         $Exe = Get-PayloadExecutable $Install
         $Exe -and ((Get-ProductVersion $Exe) -eq $CandidateVersion)
     } 60 "active exe becoming $CandidateVersion"
-    $OldDir = Join-Path $Sandbox "install\Organizador.old"
-    Wait-ForCondition { Test-Path -LiteralPath (Join-Path $OldDir "Organizador.exe") } 20 "rollback folder"
-    if ((Get-ProductVersion (Join-Path $OldDir "Organizador.exe")) -ne "0.6.1") {
-        Fail "Rollback folder is not 0.6.1"
+    # Rollback naming is helper vintage: v0.6.x uses Organizador.old, newer
+    # helpers use .Organizador.update-<hex>.rollback.
+    Wait-ForCondition {
+        @(Get-ChildItem -LiteralPath (Join-Path $Sandbox "install") -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "Organizador.old" -or $_.Name -like ".Organizador.update-*.rollback" } |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "Organizador.exe") }).Count -gt 0
+    } 20 "rollback folder"
+    $OldDir = Get-ChildItem -LiteralPath (Join-Path $Sandbox "install") -Directory |
+        Where-Object { $_.Name -eq "Organizador.old" -or $_.Name -like ".Organizador.update-*.rollback" } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "Organizador.exe") } |
+        Select-Object -First 1 -ExpandProperty FullName
+    if ((Get-ProductVersion (Join-Path $OldDir "Organizador.exe")) -ne $LegacyVersion) {
+        Fail "Rollback folder is not $LegacyVersion"
     }
     if (Test-Path -LiteralPath (Join-Path $Sandbox "install\Organizador.update")) {
         Fail "Staging directory was left behind"
     }
-    Write-Evidence "Swap complete: active=$CandidateVersion rollback=0.6.1"
+    Write-Evidence "Swap complete: active=$CandidateVersion rollback=$LegacyVersion"
+    if ($LegacyTag -ne "v0.6.1") {
+        # Handshake-era helpers supervise the relaunched candidate until it
+        # reports healthy; stopping it earlier would trigger a rollback, and
+        # every gate below would silently test the legacy binary instead.
+        $TxDir = Get-ChildItem -LiteralPath (Join-Path $FirstData "updates") -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $TxDir) { Fail "No update transaction state found" }
+        Write-Evidence "Waiting for the update handshake to complete"
+        Wait-ForCondition { Test-Path -LiteralPath (Join-Path $TxDir.FullName "healthy.json") } 90 "update handshake (healthy marker)"
+        Write-Evidence "Handshake complete"
+    }
 
     # 7. The relaunched candidate must come from the new folder, then be smoke-tested.
     Wait-ForCondition { @(Get-SandboxProcessIds).Count -gt 0 } 60 "relaunched candidate process"
@@ -375,18 +438,27 @@ try {
     Write-Evidence "Backup and restore gate"
     $CandidateExe = Get-PayloadExecutable $Install
     if (-not $CandidateExe) { Fail "Active payload has no executable" }
+    # A mid-run helper rollback would otherwise let every gate below
+    # exercise the legacy binary while reporting the candidate version.
+    if ((Get-ProductVersion $CandidateExe) -ne $CandidateVersion) { Fail "Active payload is not the candidate after the swap" }
     $InitRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--smoke-test --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($InitRun.ExitCode -ne 0) { Fail "Candidate profile initialisation failed" }
-    $FirstDatabase = Join-Path $FirstData "sortinator.db"
-    if (-not (Test-Path -LiteralPath $FirstDatabase)) { Fail "Expected profile database is missing" }
+    # Continuity across the rename: the candidate must adopt the legacy
+    # catalogue in place instead of forking an empty database.
+    $LegacyDatabase = Join-Path $FirstData "organizador.db"
+    $ForkedDatabase = Join-Path $FirstData "sortinator.db"
+    if (-not (Test-Path -LiteralPath $LegacyDatabase)) { Fail "Legacy catalogue is missing after the update" }
+    if (Test-Path -LiteralPath $ForkedDatabase) { Fail "Candidate forked an empty database instead of adopting the legacy catalogue" }
     $BackupExport = Join-Path $Sandbox "backup-export"
     New-Item -ItemType Directory -Path $BackupExport -Force | Out-Null
     Invoke-LegacyPython "sentinel" $SentinelCode @{ "SORTINATOR_E2E_SENTINEL_ACTION" = "setup" } | Out-Null
 
     $BackupRun = Start-Process -FilePath $CandidateExe -ArgumentList ('--backup-now "' + $BackupExport + '" --data-dir "' + $FirstData + '"') -WindowStyle Hidden -Wait -PassThru
     if ($BackupRun.ExitCode -ne 0) { Fail ("Backup failed with exit code " + $BackupRun.ExitCode) }
-    $BackupZip = Get-ChildItem -LiteralPath $BackupExport -Filter "*.zip" | Select-Object -First 1
-    if ($null -eq $BackupZip) { Fail "Backup produced no archive" }
+    $BackupZips = @(Get-ChildItem -LiteralPath $BackupExport -Filter "*.zip")
+    Write-Evidence ("Backup export contents: " + (($BackupZips | Select-Object -ExpandProperty Name) -join ","))
+    if ($BackupZips.Count -ne 1) { Fail "Backup export must contain exactly one archive" }
+    $BackupZip = $BackupZips[0]
     Write-Evidence ("Backup archive: " + $BackupZip.Name)
 
     Invoke-LegacyPython "sentinel" $SentinelCode @{ "SORTINATOR_E2E_SENTINEL_ACTION" = "drop" } | Out-Null

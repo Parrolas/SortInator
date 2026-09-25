@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 
+from organizador.config import resolve_database_path
 from organizador.db import (
     SCHEMA_VERSION,
     Database,
@@ -113,11 +114,14 @@ class RecoveryCoordinator:
         self,
         data_dir: Path,
         *,
-        database_name: str = "sortinator.db",
+        database_name: str | None = None,
         settings_name: str = "settings.json",
     ) -> None:
         self.data_dir = data_dir
-        self.database_path = data_dir / database_name
+        if database_name is None:
+            self.database_path = resolve_database_path(data_dir)
+        else:
+            self.database_path = data_dir / database_name
         self.settings_path = data_dir / settings_name
         self.backups_dir = data_dir / "backups"
 

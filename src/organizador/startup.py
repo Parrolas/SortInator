@@ -97,13 +97,40 @@ def refresh_launch_at_login() -> bool:
     return True
 
 
-def refresh_windows_integration(allowed_extensions: Iterable[str] | None = None) -> bool:
+def reconcile_launch_at_login(enabled: bool) -> bool:
+    """Re-create the login entry when settings say enabled but it is missing.
+
+    The rename cleanup deletes the legacy Run value; without this step a
+    user who had start-at-login enabled ends up with the Settings checkbox
+    claiming it is on while Windows holds no entry.
+    """
+
+    if os.environ.get("SORTINATOR_DISABLE_WINDOWS_INTEGRATION") == "1":
+        return False
+    if not enabled or os.name != "nt" or winreg is None:
+        return False
+    try:
+        if is_launch_at_login():
+            return False
+        set_launch_at_login(True)
+    except OSError:
+        LOGGER.warning("Could not restore the login startup entry", exc_info=True)
+        return False
+    return True
+
+
+def refresh_windows_integration(
+    allowed_extensions: Iterable[str] | None = None,
+    launch_at_login: bool | None = None,
+) -> bool:
     """Refresh the login entry, Start Menu shortcut and Explorer menu."""
 
     if os.environ.get("SORTINATOR_DISABLE_WINDOWS_INTEGRATION") == "1":
         return False
     cleanup_legacy_shell_integration()
     refresh_launch_at_login()
+    if launch_at_login:
+        reconcile_launch_at_login(True)
     shortcut_ready = ensure_start_menu_shortcut()
     protocol_ready = register_notification_protocol()
     menu_ready = register_file_context_menu(allowed_extensions or DEFAULT_EXTENSIONS)

@@ -3451,3 +3451,22 @@ def test_home_page_caps_lists_and_fits_without_clipping(
             window.close()
     finally:
         set_language("pt")
+
+
+def test_migration_rollback_survives_a_raising_restore_pending() -> None:
+    from organizador.controller import AppController
+
+    calls: list[str] = []
+
+    class FailingCoordinator:
+        def restore_pending(self) -> None:
+            calls.append("pending")
+            raise RuntimeError("transient lock")
+
+        def restore_update_rollback(self, bundle: object) -> object:
+            calls.append("targeted")
+            return bundle
+
+    AppController._restore_migration_rollback(FailingCoordinator(), object())
+
+    assert calls == ["pending", "targeted"]

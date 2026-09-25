@@ -784,3 +784,39 @@ def test_replace_requires_the_matching_subject_and_kind(
     stored_old = database.get_file(old.id)
     assert stored_old is not None
     assert stored_old.current_path == old.current_path
+
+
+def test_failed_replacement_restores_the_previous_version(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf")
+    old_bytes = old.current_path.read_bytes()
+
+    source = app_config.downloads_dir / "aula.pdf"
+    source.write_bytes(b"versao nova " * 20)
+    new_item = filer.ingest(source)
+    assert new_item is not None
+
+    def fail_record(*_args: object, **_kwargs: object) -> NoReturn:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(database, "record_filing", fail_record)
+
+    with pytest.raises(FilingError, match="revertido"):
+        filer.file_document(
+            new_item.id, subject.id, "Slides", "Aula.pdf", replace_document_id=old.id
+        )
+
+    folder = app_config.university_root / subject.folder_name / "Slides"
+    assert (folder / "Aula.pdf").read_bytes() == old_bytes
+    assert not (folder / "Aula (versão anterior).pdf").exists()
+    stored_old = database.get_file(old.id)
+    assert stored_old is not None
+    assert stored_old.current_path == folder / "Aula.pdf"
+    assert database.list_pending_versions() == []

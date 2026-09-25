@@ -116,9 +116,9 @@ class HomePage(QWidget):
         self.body_area = QScrollArea()
         self.body_area.setWidgetResizable(True)
         self.body_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # The lists below are capped so the page fits on screen; the hidden
-        # scroll bar is only a fallback for unusual scaling, never visible.
-        self.body_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # The lists below are capped so the page fits on screen; the
+        # vertical scroll bar only appears under unusual text scaling.
+        self.body_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.body_area.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
         layout = _page_layout(body)

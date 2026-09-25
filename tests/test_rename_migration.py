@@ -10,7 +10,15 @@ from types import SimpleNamespace
 import pytest
 
 from organizador import startup
-from organizador.config import APP_NAME, LEGACY_APP_NAME, migrate_legacy_data_dir
+from organizador.config import (
+    APP_NAME,
+    DATABASE_FILENAME,
+    LEGACY_APP_NAME,
+    LEGACY_DATABASE_FILENAME,
+    AppConfig,
+    migrate_legacy_data_dir,
+)
+from organizador.recovery import RecoveryCoordinator
 
 
 def _legacy_dir(tmp_path: Path) -> Path:
@@ -35,19 +43,21 @@ def test_migration_moves_the_legacy_directory_and_leaves_a_junction(tmp_path: Pa
     assert migrate_legacy_data_dir(target) is None
 
     assert target.is_dir()
-    assert (target / "sortinator.db").read_bytes() == b"db"
-    assert (target / "sortinator.db-wal").read_bytes() == b"wal"
+    # The catalogue keeps its pre-rename filename so an update and a
+    # rollback across the rename share one live file.
+    assert (target / LEGACY_DATABASE_FILENAME).read_bytes() == b"db"
+    assert (target / f"{LEGACY_DATABASE_FILENAME}-wal").read_bytes() == b"wal"
+    assert not (target / DATABASE_FILENAME).exists()
     assert (target / "sortinator.log").read_text() == "log"
     assert (target / "settings.json").is_file()
-    assert not (target / "organizador.db").exists()
 
     # The legacy path keeps working for an older binary restored by a rollback.
     assert legacy.is_dir()
     assert _is_reparse_point(legacy)
-    assert (legacy / "sortinator.db").read_bytes() == b"db"
+    assert (legacy / LEGACY_DATABASE_FILENAME).read_bytes() == b"db"
 
     assert migrate_legacy_data_dir(target) is None
-    assert (target / "sortinator.db").read_bytes() == b"db"
+    assert (target / LEGACY_DATABASE_FILENAME).read_bytes() == b"db"
 
 
 def test_migration_failure_keeps_everything_and_creates_nothing(
@@ -154,6 +164,11 @@ class _FakeRegistry:
     def QueryValueEx(self, key: _FakeKey, name: str) -> tuple[str, int]:
         return key.QueryValueEx(None, name)
 
+    def SetValueEx(
+        self, key: _FakeKey, name: str, _reserved: int, _type: object, value: str
+    ) -> None:
+        key.SetValueEx(None, name, _reserved, _type, value)
+
     def DeleteValue(self, key: _FakeKey, name: str) -> None:
         key.DeleteValue(None, name)
 
@@ -256,3 +271,68 @@ def test_legacy_shell_cleanup_keeps_foreign_entries(
 
     assert registry.keys[startup.RUN_KEY]["Organizador"].startswith(f'"{other_dir}')
     assert startup.LEGACY_PROTOCOL_KEY + r"\shell\open\command" in registry.keys
+
+
+def test_database_path_resolves_the_live_catalogue(tmp_path: Path) -> None:
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    assert AppConfig(data_dir=fresh).database_path == fresh / DATABASE_FILENAME
+
+    migrated = tmp_path / "migrated"
+    migrated.mkdir()
+    (migrated / LEGACY_DATABASE_FILENAME).write_bytes(b"db")
+    assert AppConfig(data_dir=migrated).database_path == migrated / LEGACY_DATABASE_FILENAME
+
+    renamed = tmp_path / "renamed"
+    renamed.mkdir()
+    (renamed / DATABASE_FILENAME).write_bytes(b"db")
+    assert AppConfig(data_dir=renamed).database_path == renamed / DATABASE_FILENAME
+
+    both = tmp_path / "both"
+    both.mkdir()
+    (both / LEGACY_DATABASE_FILENAME).write_bytes(b"stray")
+    (both / DATABASE_FILENAME).write_bytes(b"db")
+    assert AppConfig(data_dir=both).database_path == both / DATABASE_FILENAME
+
+
+def test_reconcile_recreates_a_missing_login_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = _FakeRegistry({startup.RUN_KEY: {}})
+    monkeypatch.setattr(startup, "winreg", registry)
+    monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
+
+    assert startup.reconcile_launch_at_login(True) is True
+    assert registry.keys[startup.RUN_KEY][startup.VALUE_NAME]
+
+    assert startup.reconcile_launch_at_login(True) is False
+    assert startup.reconcile_launch_at_login(False) is False
+
+
+def test_rename_cleanup_followed_by_reconcile_keeps_start_at_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_dir = tmp_path / "Programs" / "SortInator" / "app"
+    app_dir.mkdir(parents=True)
+    registry = _FakeRegistry(
+        {startup.RUN_KEY: {"Organizador": f'"{app_dir}\\Organizador.exe" --background'}}
+    )
+    monkeypatch.setattr(
+        startup, "sys", SimpleNamespace(frozen=True, executable=str(app_dir / "SortInator.exe"))
+    )
+    monkeypatch.setattr(startup, "winreg", registry)
+    monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
+    missing = tmp_path / "missing.lnk"
+    monkeypatch.setattr(startup, "start_menu_shortcut_path", lambda *args, **kwargs: missing)
+
+    startup.cleanup_legacy_shell_integration()
+    assert "Organizador" not in registry.keys.get(startup.RUN_KEY, {})
+
+    assert startup.reconcile_launch_at_login(True) is True
+    assert registry.keys[startup.RUN_KEY][startup.VALUE_NAME].startswith(f'"{app_dir}')
+
+
+def test_recovery_coordinator_finds_the_legacy_catalogue(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / LEGACY_DATABASE_FILENAME).write_bytes(b"db")
+
+    assert RecoveryCoordinator(data_dir).database_path == data_dir / LEGACY_DATABASE_FILENAME

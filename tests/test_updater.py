@@ -1332,3 +1332,66 @@ def test_prune_keeps_failed_and_partial_rollback_state(tmp_path: Path) -> None:
     assert after_commit.staging_dir.is_dir()
     assert partial.state_dir.is_dir()
     assert partial.staging_dir.is_dir()
+
+
+def test_prune_skips_a_malformed_result_and_reclaims_the_rest(tmp_path: Path) -> None:
+    app = _make_app_layout(tmp_path / "Corrupt App")
+    data_dir = tmp_path / "data"
+
+    corrupt = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    corrupt.result_path.write_text("{not json", encoding="utf-8")
+    updater.release_installation_lock(corrupt)
+
+    old = updater.create_update_transaction(app, "0.6.2", data_dir=data_dir)
+    old.staging_dir.mkdir(parents=True)
+    updater.release_installation_lock(old)
+
+    aged = time.time() - 8 * 86400.0
+    os.utime(corrupt.state_dir, (aged, aged))
+    os.utime(old.state_dir, (aged, aged))
+
+    removed = updater.prune_abandoned_update_state(data_dir)
+
+    assert old.state_dir in removed
+    assert not old.state_dir.exists()
+    assert corrupt.state_dir.is_dir()
+
+
+def test_validate_update_target_accepts_the_bridge_alias(tmp_path: Path) -> None:
+    app = _make_app_layout(tmp_path / "Bridge App")
+    (app / "update-manifest.json").write_text('{"executable": "SortInator.exe"}', encoding="utf-8")
+    (app / "Organizador.exe").write_bytes(b"app binary")
+    data_dir = tmp_path / "data"
+    transaction = updater.create_update_transaction(app, "0.19.0", data_dir=data_dir)
+    updater.write_update_transaction(transaction)
+    try:
+        validated = updater.validate_update_target(
+            transaction.manifest_path,
+            transaction.token,
+            data_dir=data_dir,
+            executable=app / "Organizador.exe",
+        )
+        assert validated.transaction_id == transaction.transaction_id
+        validated = updater.validate_update_target(
+            transaction.manifest_path,
+            transaction.token,
+            data_dir=data_dir,
+            executable=app / "SortInator.exe",
+        )
+        assert validated.transaction_id == transaction.transaction_id
+    finally:
+        updater.abort_update_transaction(transaction)
+
+    (app / "Organizador.exe").unlink()
+    transaction = updater.create_update_transaction(app, "0.19.0", data_dir=data_dir)
+    updater.write_update_transaction(transaction)
+    try:
+        with pytest.raises(updater.UpdaterError, match="does not match"):
+            updater.validate_update_target(
+                transaction.manifest_path,
+                transaction.token,
+                data_dir=data_dir,
+                executable=app / "Organizador.exe",
+            )
+    finally:
+        updater.abort_update_transaction(transaction)

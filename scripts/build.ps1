@@ -82,7 +82,12 @@ if (-not (Test-Path -LiteralPath $Executable)) {
 # such helper is in circulation.
 $LegacyExecutable = Join-Path $Distribution "Organizador.exe"
 Remove-Item -LiteralPath $LegacyExecutable -Force -ErrorAction SilentlyContinue
-New-Item -ItemType HardLink -Path $LegacyExecutable -Target $Executable | Out-Null
+try {
+    New-Item -ItemType HardLink -Path $LegacyExecutable -Target $Executable -ErrorAction Stop | Out-Null
+}
+catch {
+    Write-Warning "Could not create the transitional Organizador.exe hardlink (filesystem without hardlink support?); pre-rename over-the-air updates from this build will not work."
+}
 
 if ($SigningCertificateThumbprint) {
     if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') { throw "Invalid signing thumbprint" }

@@ -21,6 +21,26 @@ LOGGER = logging.getLogger(__name__)
 
 APP_NAME = "SortInator"
 LEGACY_APP_NAME = "Organizador"
+DATABASE_FILENAME = "sortinator.db"
+LEGACY_DATABASE_FILENAME = "organizador.db"
+
+
+def resolve_database_path(data_dir: Path) -> Path:
+    """Return the live catalogue file inside a data directory.
+
+    Installations updated from a pre-rename version keep the catalogue
+    under its legacy filename; opening it in place means an update and
+    a rollback across the rename share one live file. Fresh installs
+    use the new name, which also wins when both files exist.
+    """
+
+    candidate = data_dir / DATABASE_FILENAME
+    legacy = data_dir / LEGACY_DATABASE_FILENAME
+    if not candidate.exists() and legacy.is_file():
+        return legacy
+    return candidate
+
+
 DOWNLOADS_GUID = "{374DE290-123F-4565-9164-39C4925E467B}"
 MANUAL_IMPORT_BATCH_LIMIT = 25
 DEFAULT_EXTENSIONS = (
@@ -91,6 +111,10 @@ def migrate_legacy_data_dir(data_dir: Path) -> str | None:
     directory untouched and creates nothing, so the next launch retries it.
     After a successful move a directory junction keeps the legacy path
     working, so an older binary restored by a rollback still finds its data.
+    The catalogue itself keeps its pre-rename filename: the new binary opens
+    it in place (see ``AppConfig.database_path``), so an update and a
+    rollback across the rename share one live file. Only the other renamed
+    files (log, ...) move to the new name.
     """
 
     if os.name != "nt":
@@ -110,6 +134,10 @@ def migrate_legacy_data_dir(data_dir: Path) -> str | None:
             continue
         if child.name.startswith(f"{LEGACY_APP_NAME.casefold()}."):
             suffix = child.name[len(LEGACY_APP_NAME) + 1 :]
+            if suffix == "db" or suffix.startswith("db-"):
+                # The live catalogue (and its SQLite sidecars) stay under
+                # the legacy name; the new binary adopts them in place.
+                continue
             with suppress(OSError):
                 child.rename(data_dir / f"{APP_NAME.casefold()}.{suffix}")
     _create_legacy_data_junction(legacy, data_dir)
@@ -173,7 +201,7 @@ class AppConfig:
     def database_path(self) -> Path:
         """Path to the local SQLite database."""
 
-        return self.data_dir / "sortinator.db"
+        return resolve_database_path(self.data_dir)
 
     @property
     def log_path(self) -> Path:

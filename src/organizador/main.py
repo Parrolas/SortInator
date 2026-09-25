@@ -293,8 +293,16 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.unregister_integration:
             unregister_windows_integration()
             return 0
+        if arguments.data_dir is None:
+            # Migrate first so registration uses the user's real settings
+            # instead of defaults from a fresh directory.
+            migrate_legacy_data_dir(default_data_dir())
         config, _error = load_config_safely(arguments.data_dir or default_data_dir())
-        return 0 if refresh_windows_integration(config.allowed_extensions) else 1
+        return (
+            0
+            if refresh_windows_integration(config.allowed_extensions, config.launch_at_login)
+            else 1
+        )
     target_data_dir = arguments.data_dir or default_data_dir()
     # A pre-rename install keeps its data under the old product name; move it
     # once before anything (including the log) creates the new directory.

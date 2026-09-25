@@ -2,6 +2,42 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.19.0 - 2026-09-24
+
+### Fixed
+
+- Updates and rollbacks across the rename now share one live catalogue: a
+  migrated installation keeps its database under the pre-rename filename and
+  the new version opens it in place, so an over-the-air update from 0.17.x no
+  longer lands on an empty library and rolling back no longer forks one.
+- Pre-rename clients can discover new releases again: every release also
+  publishes a byte-identical `Organizador-<version>-windows-x64.zip` alias
+  (plus checksum) next to the `SortInator-*` assets.
+- The update handshake accepts the previous executable name while payloads
+  still ship it, so helpers from 0.17.x can relaunch the new version
+  through it instead of failing validation and rolling back.
+- Start-at-login survives the rename: when the settings say enabled but the
+  login entry is missing (the rename cleanup retired the old one), it is
+  re-created at startup. The installer-time shell registration now migrates
+  legacy data first, so it registers the user's real extension list.
+- The Home page regained its vertical scroll bar as the fallback for large
+  text scaling; the five-plus-five cap keeps it short in normal use.
+- A failed filing now restores a replaced previous version to its original
+  name instead of leaving it renamed.
+- Short or common-word subject codes (DE, A, E) no longer match every
+  filename; they only count as codes next to a number (DE 101).
+- A corrupt update result no longer stops the state pruner from reclaiming
+  the other entries, and a raising pending-restore no longer skips the
+  targeted update rollback.
+- Setup upgrades remove obsolete payload files before installing.
+- Pending pre-rename notification actions still resolve.
+
+### Changed
+
+- The update end-to-end gate now also covers the closest pre-rename client
+  (v0.17.1, which carries the profile dir like production) alongside v0.6.1,
+  and asserts the candidate adopts the legacy catalogue in place.
+
 ## 0.18.1 - 2026-09-24
 
 ### Fixed

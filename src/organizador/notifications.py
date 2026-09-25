@@ -15,7 +15,7 @@ from organizador.models import FiledDocument
 from organizador.windows_shell import AUMID
 
 LOGGER = logging.getLogger(__name__)
-URI_PATTERN = re.compile(r"sortinator://notification/([0-9a-f]{32})\Z")
+URI_PATTERN = re.compile(r"(?:sortinator|organizador)://notification/([0-9a-f]{32})\Z")
 LIFETIME_SECONDS = 7 * 24 * 60 * 60
 
 

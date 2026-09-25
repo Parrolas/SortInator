@@ -271,10 +271,12 @@ class FilingService:
                 related_event_id=version_event.id if version_event is not None else None,
             )
         except Exception as exc:
+            self._revert_version_rename(version_event)
             raise FilingError(_("Não foi possível preparar o histórico da organização.")) from exc
         try:
             move_without_overwrite(item.path, destination)
         except IncompleteMoveError as exc:
+            self._revert_version_rename(version_event)
             raise FilingError(
                 _(
                     "A organização ficou incompleta. O original e a cópia foram mantidos; "
@@ -288,6 +290,7 @@ class FilingService:
                 )
             except Exception:
                 LOGGER.exception("Failed to cancel a prepared filing")
+            self._revert_version_rename(version_event)
             raise FilingError(
                 _(
                     "O ficheiro ainda está a ser usado por outra aplicação. "
@@ -324,9 +327,29 @@ class FilingService:
                     "Revê a Caixa de Entrada antes de repetir."
                 )
             )
+            self._revert_version_rename(version_event)
             raise FilingError(message) from exc
         self._register_collision(collided)
         return document
+
+    def _revert_version_rename(self, event: HistoryEvent | None) -> None:
+        """Restore a renamed previous version after its filing failed.
+
+        Best effort: the filing error stays authoritative, so a failure
+        here is only logged.
+        """
+
+        if event is None:
+            return
+        try:
+            move_without_overwrite(event.destination_path, event.source_path)
+        except Exception:
+            LOGGER.exception("Could not restore the previous version after a failed filing")
+            return
+        try:
+            self.database.revert_version_rename(event.id)
+        except Exception:
+            LOGGER.exception("Could not point the catalogue back at the restored version")
 
     @staticmethod
     def _previous_version_name(filename: str) -> str:

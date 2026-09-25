@@ -1016,7 +1016,11 @@ class AppController(QObject):
 
     def _prepare_windows_integration(self) -> None:
         self.windows_integration_ready.emit(
-            bool(refresh_windows_integration(self.config.allowed_extensions))
+            bool(
+                refresh_windows_integration(
+                    self.config.allowed_extensions, self.config.launch_at_login
+                )
+            )
         )
 
     def _set_native_notifications(self, ready: bool) -> None:
@@ -1983,7 +1987,7 @@ class AppController(QObject):
         if isinstance(application, QApplication):
             apply_theme(application, get_theme(self.config.theme))
         with suppress(Exception):
-            refresh_windows_integration(self.config.allowed_extensions)
+            refresh_windows_integration(self.config.allowed_extensions, self.config.launch_at_login)
         self._restart_watcher()
         self.main_window.settings_page.load_config(self.config)
         self.main_window.settings_page.set_status(_("Definições guardadas."))
@@ -2747,9 +2751,16 @@ class AppController(QObject):
 
         if bundle is None:
             return
-        with suppress(Exception):
-            if coordinator.restore_pending() is None:
+        try:
+            pending_restored = coordinator.restore_pending()
+        except Exception:
+            LOGGER.exception("Could not restore the pending migration bundle")
+            pending_restored = None
+        if pending_restored is None:
+            try:
                 coordinator.restore_update_rollback(bundle)
+            except Exception:
+                LOGGER.exception("Could not restore the update rollback bundle")
 
     def _commit_update_handshake(
         self,

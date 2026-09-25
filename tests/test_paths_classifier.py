@@ -305,3 +305,26 @@ def test_due_date_accepts_unambiguous_or_contextual_pairs() -> None:
     assert extract_due_date("Teste 5-3.pdf", today=date(2026, 8, 1)) == date(2027, 3, 5)
     assert extract_due_date("entrega aula 5-3.pdf", today=date(2026, 8, 1)) is None
     assert extract_due_date("ficha_2026-05-10.pdf") == date(2026, 5, 10)
+
+
+def test_classifier_ignores_common_word_subject_codes() -> None:
+    subjects = [
+        Subject(1, "Alemão", "DE", "#000000", (), "DE"),
+        Subject(2, "Biologia", "BIO", "#000000", (), "BIO"),
+    ]
+
+    guess = guess_filing("Trabalho de Biologia.pdf", subjects)
+
+    assert guess.subject_id == 2
+
+
+def test_classifier_accepts_a_weak_code_next_to_a_number() -> None:
+    subjects = [
+        Subject(1, "Alemão", "DE", "#000000", (), "DE"),
+        Subject(2, "Biologia", "BIO", "#000000", (), "BIO"),
+    ]
+
+    guess = guess_filing("DE 101 aula.pdf", subjects)
+
+    assert guess.subject_id == 1
+    assert guess.confidence >= 90

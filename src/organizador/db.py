@@ -2151,6 +2151,40 @@ class Database:
             connection.commit()
         return cursor.rowcount == 1
 
+    def revert_version_rename(self, event_id: int) -> bool:
+        """Undo a completed previous-version rename whose filing never happened.
+
+        The caller moves the file back to its original name first; this
+        points the catalog back and marks the version event undone.
+        Returns ``False`` when there is nothing to revert.
+        """
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM events WHERE id = ? AND action = 'version' AND undone_at IS NULL",
+                (event_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            event = self._event(row)
+            if event.file_id is None:
+                return False
+            if not event.source_path.is_file() or event.destination_path.exists():
+                return False
+            updated = connection.execute(
+                """
+                UPDATE files SET current_path = ?
+                WHERE id = ? AND current_path = ? AND catalog_state = 'active'
+                """,
+                (str(event.source_path), event.file_id, str(event.destination_path)),
+            )
+            if updated.rowcount != 1:
+                return False
+            connection.execute("UPDATE events SET undone_at = ? WHERE id = ?", (_now(), event_id))
+            connection.commit()
+        return True
+
     def list_pending_versions(self) -> list[HistoryEvent]:
         """List previous-version renames interrupted before their commit."""
 

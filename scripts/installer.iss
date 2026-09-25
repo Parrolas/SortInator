@@ -46,6 +46,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\app"
+
 [Icons]
 Name: "{autoprograms}\SortInator"; Filename: "{app}\app\SortInator.exe"; AppUserModelID: "Parrolas.SortInator"
 Name: "{autodesktop}\SortInator"; Filename: "{app}\app\SortInator.exe"; Tasks: desktopicon

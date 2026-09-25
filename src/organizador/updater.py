@@ -793,7 +793,7 @@ def prune_abandoned_update_state(data_dir: Path, *, max_age_days: float = 7.0) -
             if result_path.exists():
                 try:
                     result = read_update_result(result_path)
-                except (OSError, ValueError, KeyError):
+                except (OSError, ValueError, KeyError, UpdaterError):
                     continue
                 if result is None:
                     continue
@@ -1196,6 +1196,23 @@ def _target_executable(transaction: UpdateTransaction) -> Path:
     return executable
 
 
+def _expected_target_executables(transaction: UpdateTransaction) -> list[Path]:
+    """Executables a relaunched target may legitimately run as.
+
+    During the rename bridge the payload still ships the previous
+    executable name as an alias, and pre-rename helpers launch through
+    it; rejecting that identity would fail every update handshake from
+    those versions. The alias retires itself once payloads stop
+    shipping it.
+    """
+
+    expected = [_target_executable(transaction)]
+    legacy = transaction.app_dir / "Organizador.exe"
+    if legacy.is_file() and legacy not in expected:
+        expected.append(legacy)
+    return expected
+
+
 def _write_marker(path: Path, transaction: UpdateTransaction, *, pid: int | None = None) -> None:
     _atomic_write_json(
         path,
@@ -1226,7 +1243,8 @@ def validate_update_target(
     if parsed_version != transaction.version:
         raise UpdaterError("updated application version does not match the transaction")
     actual_executable = (executable or Path(sys.executable)).resolve()
-    if actual_executable != _target_executable(transaction).resolve():
+    expected = [path.resolve() for path in _expected_target_executables(transaction)]
+    if actual_executable not in expected:
         raise UpdaterError("updated application path does not match the transaction")
     if transaction.data_dir is None or transaction.data_dir.resolve() != data_dir.resolve():
         raise UpdaterError("updated application data directory does not match the transaction")
