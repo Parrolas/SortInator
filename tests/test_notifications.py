@@ -107,6 +107,11 @@ def test_single_instance_forwards_notification_without_generic_show(
     uri = "sortinator://notification/" + "a" * 32
     try:
         assert first.acquire()
+        # Drain teardown leftovers from earlier tests before the exchange: a
+        # saturated queue delays socket dispatch past the sender's patience.
+        for _ in range(30):
+            qt_app.processEvents()
+            time.sleep(0.005)
         results: list[bool] = []
 
         def send() -> None:
@@ -118,6 +123,9 @@ def test_single_instance_forwards_notification_without_generic_show(
         deadline = time.monotonic() + 2
         while not actions and time.monotonic() < deadline:
             qt_app.processEvents()
+            # Let the sender thread run: a tight spin can starve it past
+            # the server's read patience, losing the activation silently.
+            time.sleep(0.005)
         assert actions == [uri]
         worker.join(3)
         assert results == [False]
@@ -177,7 +185,11 @@ def test_controller_reveals_same_folder_and_lists_cross_folder_batch(
     finally:
         if controller._notification_dialog is not None:
             controller._notification_dialog.close()
+        if controller.watcher is not None:
+            controller.watcher.stop()
+        controller._shutdown_transfers()
         controller.indexer.shutdown()
+        controller.tray.hide()
         controller.main_window.allow_close = True
         controller.main_window.close()
 
@@ -212,7 +224,11 @@ def test_native_toasts_capture_every_batched_document_and_fall_back_safely(
         controller._filed_toast("fallback", "message", [document])
         assert fallback == ["fallback"]
     finally:
+        if controller.watcher is not None:
+            controller.watcher.stop()
+        controller._shutdown_transfers()
         controller.indexer.shutdown()
+        controller.tray.hide()
         controller.main_window.allow_close = True
         controller.main_window.close()
 
@@ -233,7 +249,11 @@ def test_smoke_activation_skips_machine_integration(
         controller.activate(StartupState(True, False), smoke_test=True)
         assert not controller._native_notifications
     finally:
+        if controller.watcher is not None:
+            controller.watcher.stop()
+        controller._shutdown_transfers()
         controller.indexer.shutdown()
+        controller.tray.hide()
         controller.main_window.allow_close = True
         controller.main_window.close()
 
@@ -244,3 +264,41 @@ def test_pre_rename_notification_uri_still_resolves(database: Database) -> None:
 
     assert notifications.notification_token(legacy_uri) is not None
     assert notifications.resolve_action(database, legacy_uri) == ([], False)
+
+
+def test_single_instance_forwards_organize_without_generic_show(
+    qt_app: QApplication, tmp_path: Path
+) -> None:
+    first = SingleInstance(tmp_path)
+    organised: list[list[str]] = []
+    first.organize_requested.connect(organised.append)
+    first.show_requested.connect(lambda: organised.append(["show"]))
+    try:
+        assert first.acquire()
+        # Drain teardown leftovers from earlier tests before the exchange: a
+        # saturated queue delays socket dispatch past the sender's patience.
+        for _ in range(30):
+            qt_app.processEvents()
+            time.sleep(0.005)
+        results: list[bool] = []
+
+        def send() -> None:
+            second = SingleInstance(tmp_path)
+            results.append(second.acquire(None, ["a.pdf"]))
+
+        worker = threading.Thread(target=send)
+        worker.start()
+        # A prior test's leftover controller can leave seconds of event
+        # backlog that one processEvents call must drain before the socket
+        # is dispatched; outlast it instead of racing it.
+        deadline = time.monotonic() + 15
+        while not organised and time.monotonic() < deadline:
+            qt_app.processEvents()
+            # Let the sender thread run: a tight spin can starve it past
+            # the server's read patience, losing the activation silently.
+            time.sleep(0.005)
+        assert organised == [["a.pdf"]]
+        worker.join(3)
+        assert results == [False]
+    finally:
+        first.server.close()

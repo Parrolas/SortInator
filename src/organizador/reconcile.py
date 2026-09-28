@@ -248,13 +248,13 @@ def _subject_folder_collision_findings(
 
     by_key: dict[str, list[str]] = {}
     for subject in database.list_subjects(active_only=True):
-        by_key.setdefault(windows_folder_key(subject.folder_name), []).append(subject.name)
+        by_key.setdefault(windows_folder_key(subject.folder_name), []).append(subject.folder_name)
     result: list[ReconciliationFinding] = []
     for key in sorted(by_key):
-        names = sorted(by_key[key])
-        if len(names) < 2:
+        entries = by_key[key]
+        if len(entries) < 2:
             continue
-        folder = config.university_root / by_key[key][0]
+        folder = config.university_root / sorted(set(entries))[0]
         result.append(
             ReconciliationFinding(
                 folder,

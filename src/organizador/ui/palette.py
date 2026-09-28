@@ -127,6 +127,7 @@ class CommandPalette(BoundedDialog):
         """Show the palette over the current commands and focus the query."""
 
         self._commands = tuple(commands)
+        self._install_shortcuts()
         self.input.clear()
         self._populate(lookup("", self._commands))
         self.show()
@@ -181,6 +182,8 @@ class CommandPalette(BoundedDialog):
         super().closeEvent(event)
 
     def _install_shortcuts(self) -> None:
+        if self._shortcuts:
+            return
         # Widget-level context keeps Escape scoped to this palette.
         shortcut = QShortcut(QKeySequence("Escape"), self)
         shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)

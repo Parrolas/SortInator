@@ -1061,7 +1061,9 @@ class AppController(QObject):
         self.show_main()
         if self._notification_dialog is not None:
             self._notification_dialog.close()
+            self._notification_dialog.deleteLater()
         self._notification_dialog = NotificationFilesDialog(documents, self.main_window)
+        self._notification_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._notification_dialog.reveal_requested.connect(self._reveal_path)
         self._notification_dialog.show()
 
@@ -1443,7 +1445,9 @@ class AppController(QObject):
             due_date,
             replace_document_id,
         )
-        self._submit_transfer(
+        if self._update_installing or self._shutting_down:
+            return
+        if not self._submit_transfer(
             "file",
             job,
             lambda: self.filer.file_document(
@@ -1453,7 +1457,12 @@ class AppController(QObject):
                 filename,
                 replace_document_id=replace_document_id,
             ),
-        )
+        ):
+            self.prompt_queue.appendleft(inbox_id)
+            self._show_next_prompt()
+            self.prompt.show_error(
+                _("Há uma transferência em curso. Tenta novamente em instantes.")
+            )
 
     def _finish_filed(self, job: _FileJob, result: object, error: str | None) -> None:
         if not isinstance(result, FiledDocument):
@@ -1484,7 +1493,13 @@ class AppController(QObject):
         QTimer.singleShot(120, self._show_next_prompt)
 
     def _return_item(self, inbox_id: int) -> None:
+        if self._update_installing or self._shutting_down:
+            return
         if not self._can_transfer(_ReturnJob(inbox_id, None, False)):
+            self.tray.notify(
+                _("Transferência em curso"),
+                _("Há uma transferência em curso. Tenta novamente em instantes."),
+            )
             return
         self._return_in_flight.add(inbox_id)
         watcher = self.watcher

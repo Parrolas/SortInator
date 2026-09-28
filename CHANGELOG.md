@@ -2,6 +2,36 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.19.1 - 2026-09-28
+
+### Fixed
+
+- Start-at-login reconciliation no longer touches the registry unless the app
+  runs from its installed executable.
+- A profile forked by the interim 0.18.x path is healed at startup: an empty
+  `sortinator.db` next to a populated `organizador.db` is set aside and the
+  real catalogue adopted; two populated catalogues surface a notice instead
+  of silently diverging.
+- Subject codes with attached numbers match again (`MAT` finds `MAT101_ficha`),
+  while short and common-word codes stay guarded.
+- Duplicate detection no longer caches a hash when the file changes mid-read.
+- Unregistering or dropping a catalogue entry now refuses while a
+  previous-version rename is in flight.
+- Explorer "organize" selections reach the app even when the install-dir
+  single-instance guard handles a second profile.
+- Confirming a filing or return while a transfer overlaps requeues the item
+  with an explanatory message instead of silently discarding the confirm.
+- Reopening the window from the tray keeps the maximized state, the command
+  palette Escape shortcut survives reopen, replaced notification dialogs are
+  destroyed, and folder-collision findings point at the real folder.
+- A relative installer output root resolves against the repository, like the
+  package build does.
+
+### Changed
+
+- Real-PowerShell helper tests fail loudly when the C# target cannot compile
+  instead of silently skipping.
+
 ## 0.19.0 - 2026-09-24
 
 ### Fixed

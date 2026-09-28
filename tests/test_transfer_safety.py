@@ -421,3 +421,67 @@ def test_download_burst_preserves_collisions_retries_locks_and_survives_bad_pdf(
     assert controller.database.search("broken")
     for document in documents:
         assert document.current_path.read_bytes() == originals[document.original_name]
+
+
+def test_file_item_rejected_by_claim_requeues_with_error(
+    controller: AppController, subject: Subject, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item_id = inbox(controller, "busy.pdf")
+    controller._transfer_claims.add(("undo", "latest"))
+    errors: list[str] = []
+    shown: list[bool] = []
+    monkeypatch.setattr(controller.prompt, "show_error", errors.append)
+    monkeypatch.setattr(controller, "_show_next_prompt", lambda: shown.append(True))
+
+    controller._file_item(item_id, subject.id, "Slides", "Busy.pdf", False, None)
+
+    assert list(controller.prompt_queue) == [item_id]
+    assert shown == [True]
+    assert len(errors) == 1 and errors[0]
+
+
+def test_file_item_rejected_during_update_stays_silent(
+    controller: AppController, subject: Subject, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item_id = inbox(controller, "quiet.pdf")
+    controller._update_installing = True
+    errors: list[str] = []
+    shown: list[bool] = []
+    monkeypatch.setattr(controller.prompt, "show_error", errors.append)
+    monkeypatch.setattr(controller, "_show_next_prompt", lambda: shown.append(True))
+
+    controller._file_item(item_id, subject.id, "Slides", "Quiet.pdf", False, None)
+
+    assert list(controller.prompt_queue) == []
+    assert shown == [] and errors == []
+
+
+def test_return_item_rejected_by_claim_notifies(
+    controller: AppController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item_id = inbox(controller, "devolver.pdf")
+    controller._transfer_claims.add(("undo", "latest"))
+    notices: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        controller.tray, "notify", lambda *args, **kwargs: notices.append((args, kwargs))
+    )
+
+    controller._return_item(item_id)
+
+    assert len(notices) == 1
+
+
+def test_return_item_rejected_during_update_stays_silent(
+    controller: AppController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item_id = inbox(controller, "calado.pdf")
+    controller._transfer_claims.add(("undo", "latest"))
+    controller._update_installing = True
+    notices: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        controller.tray, "notify", lambda *args, **kwargs: notices.append((args, kwargs))
+    )
+
+    controller._return_item(item_id)
+
+    assert notices == []

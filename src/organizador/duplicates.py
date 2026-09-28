@@ -53,6 +53,24 @@ def _hash_is_fresh(content_sha256: str, stored: str, current: str) -> bool:
     return bool(content_sha256) and bool(stored) and stored == current
 
 
+def _hash_with_fingerprint(path: Path) -> tuple[str, str] | None:
+    """Hash a file only when it is stable across the read.
+
+    Returns the digest with the confirming fingerprint, or ``None`` when the
+    file cannot be read or changed mid-hash. A ``None`` result is never
+    cached and never trusted for a match.
+    """
+
+    before = file_fingerprint(path)
+    digest = file_sha256(path)
+    if not digest:
+        return None
+    after = file_fingerprint(path)
+    if not before or before != after:
+        return None
+    return digest, after
+
+
 def find_duplicate(database: Database, item: InboxItem) -> FiledDocument | None:
     """Return the newest active document with the same content, if any.
 
@@ -68,10 +86,11 @@ def find_duplicate(database: Database, item: InboxItem) -> FiledDocument | None:
         return None
     fingerprint = item.content_sha256
     if not _hash_is_fresh(fingerprint, item.hash_fingerprint, item_fingerprint):
-        fingerprint = file_sha256(item.path)
-        if not fingerprint:
+        stable = _hash_with_fingerprint(item.path)
+        if stable is None:
             return None
-        database.set_inbox_hash(item.id, fingerprint, file_fingerprint(item.path))
+        fingerprint, confirmed = stable
+        database.set_inbox_hash(item.id, fingerprint, confirmed)
     candidates = sorted(
         database.list_files(),
         key=lambda document: (document.filed_at, document.id),
@@ -84,12 +103,11 @@ def find_duplicate(database: Database, item: InboxItem) -> FiledDocument | None:
         if _hash_is_fresh(document.content_sha256, document.hash_fingerprint, current):
             candidate_hash = document.content_sha256
         else:
-            candidate_hash = file_sha256(document.current_path)
-            if not candidate_hash:
+            stable = _hash_with_fingerprint(document.current_path)
+            if stable is None:
                 continue
-            database.set_file_hash(
-                document.id, candidate_hash, file_fingerprint(document.current_path)
-            )
+            candidate_hash, confirmed = stable
+            database.set_file_hash(document.id, candidate_hash, confirmed)
         if candidate_hash == fingerprint:
             return document
     return None

@@ -174,6 +174,7 @@ def guess_filing(
             and (
                 code in tokens
                 or re.search(r"\b" + re.escape(code) + r"\b", normalised_name) is not None
+                or re.search(r"\b" + re.escape(code) + r"\d+\b", normalised_name) is not None
             )
             and not _is_weak_code_without_number(code, normalised_name)
         ):

@@ -1319,3 +1319,55 @@ def test_begin_ingest_never_adopts_filing_or_returning_rows(
         ).fetchall()
     statuses = {str(row["status"]): int(row["id"]) for row in rows}
     assert statuses == {"filing": busy.id, "recovery": int(event.inbox_id)}
+
+
+def test_unregister_adopted_file_refused_while_a_version_rename_is_pending(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    path = tmp_path / "adopted.txt"
+    path.write_bytes(b"adopted document")
+    candidate = ExistingDownload.capture(path)
+    assert candidate is not None
+    document = database.adopt_subject_file(candidate, subject.id, "Outros")
+    versioned = document.current_path.parent / "adopted (versão anterior).txt"
+    event = database.begin_version_rename(document.id, versioned)
+
+    removed = database.unregister_adopted_file(
+        document.id,
+        expected_path=document.current_path,
+        expected_record_token=document.record_token,
+        reviewed_reason=FindingReason.UNTRACKED_SUBJECT_FILE.value,
+    )
+
+    assert not removed
+    assert database.get_file(document.id) is not None
+
+    assert database.cancel_version_rename(event.id)
+    removed = database.unregister_adopted_file(
+        document.id,
+        expected_path=document.current_path,
+        expected_record_token=document.record_token,
+        reviewed_reason=FindingReason.UNTRACKED_SUBJECT_FILE.value,
+    )
+    assert removed
+
+
+def test_drop_file_record_refused_while_a_version_rename_is_pending(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    versioned = document.current_path.parent / "aula (versão anterior).txt"
+    event = database.begin_version_rename(document.id, versioned)
+
+    dropped = database.drop_file_record(
+        document.id,
+        expected_path=document.current_path,
+        expected_origin=document.origin,
+        expected_record_token=document.record_token,
+        verify_missing=lambda: True,
+    )
+
+    assert not dropped
+    assert database.cancel_version_rename(event.id)

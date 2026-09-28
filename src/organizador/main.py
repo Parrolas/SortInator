@@ -17,7 +17,15 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from organizador import updater
-from organizador.config import APP_NAME, AppConfig, default_data_dir, migrate_legacy_data_dir
+from organizador.config import (
+    APP_NAME,
+    AdoptedCatalogue,
+    AmbiguousCatalogue,
+    AppConfig,
+    default_data_dir,
+    migrate_legacy_data_dir,
+    reconcile_forked_profile,
+)
 from organizador.controller import AppController
 from organizador.db import Database, DatabaseHealthError, NewerDatabaseError
 from organizador.i18n import _, set_language
@@ -121,7 +129,9 @@ class SingleInstance(QObject):
             socket = self.server.nextPendingConnection()
             if socket is None:
                 continue
-            socket.waitForReadyRead(100)
+            # The sender waits 2000 ms for the reply below; dropping a slow
+            # sender here would lose its activation while it reports success.
+            socket.waitForReadyRead(2000)
             payload = bytes(socket.readAll().data())
             socket.write(b"received")
             socket.flush()
@@ -281,6 +291,40 @@ def _set_app_user_model_id() -> None:
         LOGGER.warning("Could not set the application user model id", exc_info=True)
 
 
+def _notify_forked_profile(
+    controller: AppController, report: AdoptedCatalogue | AmbiguousCatalogue
+) -> None:
+    """Surface a forked rename profile once the tray is available."""
+
+    if isinstance(report, AdoptedCatalogue):
+        controller.tray.notify(
+            _("Base de dados local"),
+            _(
+                "A base de dados anterior foi adotada ({subjects} disciplinas, "
+                "{files} ficheiros); a cópia vazia foi guardada como {name}."
+            ).format(
+                subjects=report.subjects,
+                files=report.files,
+                name=report.archived.name,
+            ),
+        )
+        return
+    controller.tray.notify(
+        _("Base de dados local"),
+        _(
+            "Há duas bases de dados com conteúdo ({current}: "
+            "{current_subjects} disciplinas; {legacy}: {legacy_subjects} "
+            "disciplinas). A app está a usar {current}; consulta "
+            "sortinator.log para reveres."
+        ).format(
+            current=report.current.name,
+            current_subjects=report.current_subjects,
+            legacy=report.legacy.name,
+            legacy_subjects=report.legacy_subjects,
+        ),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Create Qt, enforce one instance and run the application."""
 
@@ -304,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
             else 1
         )
     target_data_dir = arguments.data_dir or default_data_dir()
+    fork_report = reconcile_forked_profile(target_data_dir)
     # A pre-rename install keeps its data under the old product name; move it
     # once before anything (including the log) creates the new directory.
     migration_error: str | None = None
@@ -505,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
     if install_instance is not None:
         install_instance.show_requested.connect(controller.show_main)
         install_instance.set_notification_handler(controller.activate_notification)
+        install_instance.set_organize_handler(controller.organize_external_paths)
 
     if update_arguments is not None:
         manifest_path = update_arguments[0]
@@ -583,6 +629,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     with suppress(Exception):
         coordinator.prune_automatic_backups()
+    if fork_report is not None and not arguments.smoke_test:
+        _notify_forked_profile(controller, fork_report)
     if restore_outcome is not None and not arguments.smoke_test and not arguments.background:
         outcome = restore_outcome
         QTimer.singleShot(0, lambda: _announce_restore(outcome))

@@ -1461,7 +1461,8 @@ class Database:
             pending = connection.execute(
                 """
                 SELECT 1 FROM events
-                WHERE action IN ('undo_pending', 'move_pending') AND file_id = ?
+                WHERE action IN ('undo_pending', 'move_pending', 'version_pending')
+                    AND file_id = ?
                 """,
                 (file_id,),
             ).fetchone()
@@ -1508,7 +1509,8 @@ class Database:
             pending = connection.execute(
                 """
                 SELECT 1 FROM events
-                WHERE action IN ('undo_pending', 'move_pending') AND file_id = ?
+                WHERE action IN ('undo_pending', 'move_pending', 'version_pending')
+                    AND file_id = ?
                 """,
                 (file_id,),
             ).fetchone()

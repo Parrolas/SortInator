@@ -192,3 +192,22 @@ def test_controller_registry_and_palette_lifecycle(
         controller.tray.hide()
         controller.main_window.allow_close = True
         controller.main_window.close()
+
+
+def test_palette_reinstalls_shortcuts_on_reopen(qt_app: QApplication) -> None:
+    parent = QWidget()
+    try:
+        palette = CommandPalette(parent)
+        commands = (Command(id="a", title="Alpha"),)
+        palette.open_with(commands)
+        palette.close()
+        palette.open_with(commands)
+        try:
+            assert len(palette._shortcuts) == 1
+            assert palette.isVisible()
+            QTest.keyClick(palette.input, Qt.Key.Key_Escape)
+            assert _wait_until(lambda: not palette.isVisible())
+        finally:
+            palette.close()
+    finally:
+        parent.close()

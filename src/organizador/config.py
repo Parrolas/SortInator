@@ -6,11 +6,13 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import tempfile
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 try:
     import winreg
@@ -39,6 +41,135 @@ def resolve_database_path(data_dir: Path) -> Path:
     if not candidate.exists() and legacy.is_file():
         return legacy
     return candidate
+
+
+@dataclass(frozen=True, slots=True)
+class AdoptedCatalogue:
+    """An empty fork set aside so the legacy catalogue becomes live."""
+
+    adopted: Path
+    archived: Path
+    subjects: int
+    files: int
+
+
+@dataclass(frozen=True, slots=True)
+class AmbiguousCatalogue:
+    """Two populated catalogues; the resolver keeps the new filename."""
+
+    current: Path
+    legacy: Path
+    current_subjects: int
+    current_files: int
+    legacy_subjects: int
+    legacy_files: int
+
+
+_CATALOGUE_TABLES = ("subjects", "files", "inbox", "tasks")
+
+
+def _catalogue_counts(path: Path) -> dict[str, int] | None:
+    """Count user records, or ``None`` when the file is not a readable catalogue."""
+
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            counts = {
+                table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in _CATALOGUE_TABLES
+            }
+            check = connection.execute("PRAGMA quick_check").fetchone()
+        finally:
+            connection.close()
+    except Exception:
+        LOGGER.debug("Could not inspect catalogue %s", path, exc_info=True)
+        return None
+    if check is None or check[0] != "ok":
+        return None
+    return counts
+
+
+def _ambiguous_report(
+    candidate: Path, legacy: Path, current_counts: dict[str, int], legacy_counts: dict[str, int]
+) -> AmbiguousCatalogue:
+    return AmbiguousCatalogue(
+        current=candidate,
+        legacy=legacy,
+        current_subjects=current_counts["subjects"],
+        current_files=current_counts["files"],
+        legacy_subjects=legacy_counts["subjects"],
+        legacy_files=legacy_counts["files"],
+    )
+
+
+def reconcile_forked_profile(
+    data_dir: Path,
+) -> AdoptedCatalogue | AmbiguousCatalogue | None:
+    """Detect a forked rename profile and heal the safe case.
+
+    Never raises: any failure degrades to ``None`` (the resolver keeps the
+    preferred file) or to a report without touching files.
+    """
+
+    try:
+        return _reconcile_forked_profile(data_dir)
+    except Exception:
+        LOGGER.debug("Forked-profile check failed for %s", data_dir, exc_info=True)
+        return None
+
+
+def _reconcile_forked_profile(
+    data_dir: Path,
+) -> AdoptedCatalogue | AmbiguousCatalogue | None:
+    candidate = data_dir / DATABASE_FILENAME
+    legacy = data_dir / LEGACY_DATABASE_FILENAME
+    if not candidate.is_file() or not legacy.is_file():
+        return None
+    current_counts = _catalogue_counts(candidate)
+    legacy_counts = _catalogue_counts(legacy)
+    if current_counts is None or legacy_counts is None:
+        LOGGER.warning(
+            "Found two catalogue files but could not inspect them: %s, %s",
+            candidate,
+            legacy,
+        )
+        return None
+    if all(value == 0 for value in current_counts.values()) and any(
+        value > 0 for value in legacy_counts.values()
+    ):
+        archived = data_dir / f"{DATABASE_FILENAME}.forked-{uuid4().hex[:8]}"
+        for sidecar in ("-wal", "-shm", "-journal"):
+            with suppress(OSError):
+                Path(f"{candidate}{sidecar}").rename(f"{archived}{sidecar}")
+        try:
+            candidate.rename(archived)
+        except OSError:
+            LOGGER.warning("Could not set aside the forked catalogue %s", candidate, exc_info=True)
+            return None
+        LOGGER.warning(
+            "Adopted the legacy catalogue %s (%s subjects, %s files); empty fork moved to %s",
+            legacy,
+            legacy_counts["subjects"],
+            legacy_counts["files"],
+            archived,
+        )
+        return AdoptedCatalogue(
+            adopted=legacy,
+            archived=archived,
+            subjects=legacy_counts["subjects"],
+            files=legacy_counts["files"],
+        )
+    if any(value > 0 for value in current_counts.values()) and any(
+        value > 0 for value in legacy_counts.values()
+    ):
+        LOGGER.warning(
+            "Found two populated catalogues; keeping %s: %s, %s",
+            candidate,
+            legacy,
+            current_counts,
+        )
+        return _ambiguous_report(candidate, legacy, current_counts, legacy_counts)
+    return None
 
 
 DOWNLOADS_GUID = "{374DE290-123F-4565-9164-39C4925E467B}"

@@ -46,6 +46,7 @@ def test_scan_reports_subjects_sharing_one_windows_folder(
     assert len(report.subject_folder_collisions) == 1
     finding = report.subject_folder_collisions[0]
     assert finding.reason is FindingReason.SUBJECT_FOLDER_COLLISION
+    assert finding.path == app_config.university_root / "MAT101 - CÁLCULO I"
     assert finding in findings(report)
     assert finding in visible_findings(database, report)
     assert dismiss_finding(database, finding) is True

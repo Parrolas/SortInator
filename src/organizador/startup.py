@@ -107,6 +107,8 @@ def reconcile_launch_at_login(enabled: bool) -> bool:
 
     if os.environ.get("SORTINATOR_DISABLE_WINDOWS_INTEGRATION") == "1":
         return False
+    if not getattr(sys, "frozen", False):
+        return False
     if not enabled or os.name != "nt" or winreg is None:
         return False
     try:

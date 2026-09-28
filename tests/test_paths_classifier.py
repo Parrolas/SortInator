@@ -328,3 +328,26 @@ def test_classifier_accepts_a_weak_code_next_to_a_number() -> None:
 
     assert guess.subject_id == 1
     assert guess.confidence >= 90
+
+
+def test_classifier_matches_attached_digit_codes() -> None:
+    subjects = [
+        Subject(1, "Matemática", "MAT", "#000000", (), "MAT"),
+        Subject(2, "Biologia", "BIO", "#000000", (), "BIO"),
+    ]
+
+    guess = guess_filing("MAT101_ficha.pdf", subjects)
+
+    assert guess.subject_id == 1
+    assert guess.confidence >= 90
+
+
+def test_classifier_still_rejects_weak_attached_codes() -> None:
+    subjects = [
+        Subject(1, "Arte", "A", "#000000", (), "A"),
+        Subject(2, "Biologia", "BIO", "#000000", (), "BIO"),
+    ]
+
+    guess = guess_filing("relatorio_a4.pdf", subjects)
+
+    assert guess.confidence < 90

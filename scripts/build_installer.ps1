@@ -8,7 +8,11 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-if (-not $OutputRoot) { $OutputRoot = Join-Path $Root "artifacts" }
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    $OutputRoot = Join-Path $Root "artifacts"
+} elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
+    $OutputRoot = Join-Path $Root $OutputRoot
+}
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $Payload = Join-Path $OutputRoot "SortInator"
 $Manifest = Get-Content -LiteralPath (Join-Path $Payload "update-manifest.json") -Raw | ConvertFrom-Json

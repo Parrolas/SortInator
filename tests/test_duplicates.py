@@ -6,6 +6,8 @@ import hashlib
 import os
 from pathlib import Path
 
+import pytest
+
 from organizador.db import Database
 from organizador.duplicates import file_fingerprint, file_sha256, find_duplicate
 from organizador.models import FiledDocument, Subject
@@ -213,3 +215,27 @@ def test_find_duplicate_ignores_dropped_documents(
     assert item is not None
 
     assert find_duplicate(database, item) is None
+
+
+def test_unstable_file_is_neither_cached_nor_trusted(
+    database: Database, subject: Subject, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _filed_document(database, subject, tmp_path, "doc.pdf", b"same-content")
+    target = tmp_path / "novo.pdf"
+    target.write_bytes(b"same-content")
+    item_id = _inbox_item(database, subject, tmp_path, "novo.pdf", b"same-content")
+    real_sha256 = file_sha256
+
+    def mutating(path: Path) -> str:
+        with open(path, "ab") as stream:
+            stream.write(b"!")
+        return real_sha256(path)
+
+    monkeypatch.setattr("organizador.duplicates.file_sha256", mutating)
+
+    item = database.get_inbox_item(item_id)
+    assert item is not None
+    assert find_duplicate(database, item) is None
+    refreshed = database.get_inbox_item(item_id)
+    assert refreshed is not None
+    assert not refreshed.hash_fingerprint

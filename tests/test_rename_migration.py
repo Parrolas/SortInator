@@ -15,9 +15,13 @@ from organizador.config import (
     DATABASE_FILENAME,
     LEGACY_APP_NAME,
     LEGACY_DATABASE_FILENAME,
+    AdoptedCatalogue,
+    AmbiguousCatalogue,
     AppConfig,
     migrate_legacy_data_dir,
+    reconcile_forked_profile,
 )
+from organizador.db import Database
 from organizador.recovery import RecoveryCoordinator
 
 
@@ -298,6 +302,7 @@ def test_database_path_resolves_the_live_catalogue(tmp_path: Path) -> None:
 def test_reconcile_recreates_a_missing_login_entry(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = _FakeRegistry({startup.RUN_KEY: {}})
     monkeypatch.setattr(startup, "winreg", registry)
+    monkeypatch.setattr(startup, "sys", SimpleNamespace(frozen=True, executable="python"))
     monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
 
     assert startup.reconcile_launch_at_login(True) is True
@@ -336,3 +341,69 @@ def test_recovery_coordinator_finds_the_legacy_catalogue(tmp_path: Path) -> None
     (data_dir / LEGACY_DATABASE_FILENAME).write_bytes(b"db")
 
     assert RecoveryCoordinator(data_dir).database_path == data_dir / LEGACY_DATABASE_FILENAME
+
+
+def test_reconcile_ignores_missing_entry_when_not_frozen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _FakeRegistry({startup.RUN_KEY: {}})
+    monkeypatch.setattr(startup, "winreg", registry)
+    monkeypatch.setattr(startup, "sys", SimpleNamespace(frozen=False))
+    monkeypatch.delenv("SORTINATOR_DISABLE_WINDOWS_INTEGRATION", raising=False)
+
+    assert startup.reconcile_launch_at_login(True) is False
+    assert startup.VALUE_NAME not in registry.keys[startup.RUN_KEY]
+
+
+def _populated_legacy(data: Path) -> None:
+    legacy_db = Database(data / LEGACY_DATABASE_FILENAME)
+    legacy_db.initialize()
+    legacy_db.add_subject("Biologia", "BIO", "#000000", (), "BIO")
+
+
+def test_forked_profile_adopts_the_legacy_catalogue(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _populated_legacy(data)
+    Database(data / DATABASE_FILENAME).initialize()
+
+    report = reconcile_forked_profile(data)
+
+    assert isinstance(report, AdoptedCatalogue)
+    assert report.subjects == 1 and report.files == 0
+    assert report.adopted == data / LEGACY_DATABASE_FILENAME
+    assert not (data / DATABASE_FILENAME).exists()
+    assert report.archived.exists()
+    assert AppConfig(data_dir=data).database_path == data / LEGACY_DATABASE_FILENAME
+
+
+def test_forked_profile_with_two_live_catalogues_only_reports(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _populated_legacy(data)
+    current_db = Database(data / DATABASE_FILENAME)
+    current_db.initialize()
+    current_db.add_subject("Física", "FIS", "#000000", (), "FIS")
+
+    report = reconcile_forked_profile(data)
+
+    assert isinstance(report, AmbiguousCatalogue)
+    assert report.current_subjects == 1 and report.legacy_subjects == 1
+    assert (data / DATABASE_FILENAME).is_file()
+    assert (data / LEGACY_DATABASE_FILENAME).is_file()
+    assert AppConfig(data_dir=data).database_path == data / DATABASE_FILENAME
+
+
+def test_forked_profile_ignores_single_or_unreadable_files(tmp_path: Path) -> None:
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    (lone / LEGACY_DATABASE_FILENAME).write_bytes(b"db")
+    assert reconcile_forked_profile(lone) is None
+
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    _populated_legacy(broken)
+    (broken / DATABASE_FILENAME).write_bytes(b"not a database")
+
+    assert reconcile_forked_profile(broken) is None
+    assert (broken / LEGACY_DATABASE_FILENAME).is_file()

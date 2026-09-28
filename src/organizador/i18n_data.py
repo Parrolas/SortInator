@@ -925,6 +925,11 @@ EN_STRINGS: dict[str, str] = {
     "{count} documentos": "{count} documents",
     "1 documento": "1 document",
     "{subject}  ·  {kind}": "{subject}  ·  {kind}",
+    "Base de dados local": "Local database",
+    "A base de dados anterior foi adotada ({subjects} disciplinas, {files} ficheiros); a cópia vazia foi guardada como {name}.": "The previous database was adopted ({subjects} subjects, {files} files); the empty copy was kept as {name}.",
+    "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "There are two populated databases ({current}: {current_subjects} subjects; {legacy}: {legacy_subjects} subjects). The app is using {current}; check sortinator.log to review.",
+    "Transferência em curso": "Transfer in progress",
+    "Há uma transferência em curso. Tenta novamente em instantes.": "A file transfer is already running. Try again in a moment.",
 }
 
 ES_STRINGS: dict[str, str] = {
@@ -1885,6 +1890,11 @@ ES_STRINGS: dict[str, str] = {
     "{count} documentos": "{count} documentos",
     "1 documento": "1 documento",
     "{subject}  ·  {kind}": "{subject}  ·  {kind}",
+    "Base de dados local": "Base de datos local",
+    "A base de dados anterior foi adotada ({subjects} disciplinas, {files} ficheiros); a cópia vazia foi guardada como {name}.": "Se adoptó la base de datos anterior ({subjects} asignaturas, {files} ficheros); la copia vacía se guardó como {name}.",
+    "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "Hay dos bases de datos con contenido ({current}: {current_subjects} asignaturas; {legacy}: {legacy_subjects} asignaturas). La app está usando {current}; consulta sortinator.log para revisar.",
+    "Transferência em curso": "Transferencia en curso",
+    "Há uma transferência em curso. Tenta novamente em instantes.": "Ya hay una transferencia en curso. Inténtalo de nuevo en un momento.",
 }
 
 FR_STRINGS: dict[str, str] = {
@@ -2860,4 +2870,9 @@ FR_STRINGS: dict[str, str] = {
     "{count} documentos": "{count} documents",
     "1 documento": "1 document",
     "{subject}  ·  {kind}": "{subject}  ·  {kind}",
+    "Base de dados local": "Base de données locale",
+    "A base de dados anterior foi adotada ({subjects} disciplinas, {files} ficheiros); a cópia vazia foi guardada como {name}.": "L'ancienne base de données a été adoptée ({subjects} matières, {files} fichiers) ; la copie vide a été conservée sous le nom {name}.",
+    "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "Il y a deux bases de données non vides ({current} : {current_subjects} matières ; {legacy} : {legacy_subjects} matières). L'appli utilise {current} ; consulte sortinator.log pour vérifier.",
+    "Transferência em curso": "Transfert en cours",
+    "Há uma transferência em curso. Tenta novamente em instantes.": "Un transfert est déjà en cours. Réessaie dans un instant.",
 }

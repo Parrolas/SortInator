@@ -788,7 +788,7 @@ public static class Program {
         timeout=30,
     )
     if completed.returncode != 0 or not executable.is_file():
-        pytest.skip(f"could not compile isolated helper target: {completed.stderr.strip()}")
+        pytest.fail(f"could not compile isolated helper target: {completed.stderr.strip()}")
     return executable
 
 
@@ -1362,7 +1362,7 @@ def test_validate_update_target_accepts_the_bridge_alias(tmp_path: Path) -> None
     (app / "update-manifest.json").write_text('{"executable": "SortInator.exe"}', encoding="utf-8")
     (app / "Organizador.exe").write_bytes(b"app binary")
     data_dir = tmp_path / "data"
-    transaction = updater.create_update_transaction(app, "0.19.0", data_dir=data_dir)
+    transaction = updater.create_update_transaction(app, __version__, data_dir=data_dir)
     updater.write_update_transaction(transaction)
     try:
         validated = updater.validate_update_target(
@@ -1383,7 +1383,7 @@ def test_validate_update_target_accepts_the_bridge_alias(tmp_path: Path) -> None
         updater.abort_update_transaction(transaction)
 
     (app / "Organizador.exe").unlink()
-    transaction = updater.create_update_transaction(app, "0.19.0", data_dir=data_dir)
+    transaction = updater.create_update_transaction(app, __version__, data_dir=data_dir)
     updater.write_update_transaction(transaction)
     try:
         with pytest.raises(updater.UpdaterError, match="does not match"):

@@ -194,7 +194,10 @@ class MainWindow(QMainWindow):
         """Restore and focus the window from tray or a second launch."""
 
         self.show_page(page)
-        self.showNormal()
+        if self.isMaximized():
+            self.showMaximized()
+        else:
+            self.showNormal()
         self.raise_()
         self.activateWindow()
 
