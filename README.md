@@ -1,332 +1,325 @@
 # SortInator
 
-Aplicação local para Windows 11 que vigia Downloads, pede a classificação dos
-ficheiros académicos e mantém uma biblioteca pesquisável por disciplina,
-tópico e tipo de conteúdo, com cópias de segurança do catálogo.
+English · [Português](README.pt.md)
 
-**Índice:** [Vídeo](#vídeo) · [Funcionalidades](#funcionalidades) ·
-[Proteção dos ficheiros](#proteção-dos-ficheiros) · [Instalação no
-Windows](#instalação-no-windows) · [Área de
-notificação](#área-de-notificação) · [Cópias de
-segurança](#cópias-de-segurança) · [Dados e privacidade](#dados-e-privacidade) ·
-[Atualização e reversão](#atualização-e-reversão) ·
-[Desinstalação](#desinstalação) · [Limitações atuais](#limitações-atuais) ·
-[Contribuir](#contribuir) · [Política de assinatura de código](#política-de-assinatura-de-código) · [Licenças](#licenças)
+A local Windows 11 app that watches Downloads, asks how to classify academic
+files, and keeps a searchable library by subject, topic and content type —
+with backups of the catalog.
 
-## Vídeo
+**Contents:** [Video](#video) · [Features](#features) ·
+[File protection](#file-protection) · [Install on
+Windows](#install-on-windows) · [Tray area](#tray-area) ·
+[Backups](#backups) · [Data & privacy](#data--privacy) ·
+[Update & rollback](#update--rollback) · [Uninstall](#uninstall) ·
+[Current limitations](#current-limitations) · [Contributing](#contributing) ·
+[Code-signing policy](#code-signing-policy) · [Licenses](#licenses)
 
-[![Vídeo de apresentação do SortInator](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/e362318e-088a-42be-adcc-72284971a93a)
+## Video
 
+[![SortInator intro video](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/e362318e-088a-42be-adcc-72284971a93a)
 
+*Intro video — 22 seconds (Portuguese narration). Click to watch with music.*
 
+## Features
 
+**Watching and intake**
 
-*Vídeo de apresentação — 22 segundos. Clica para ver com música.*
+- Watches only new eligible files in the configured Downloads folder; the
+  accepted extensions are configurable in Settings.
+- Moves every file into a safe inbox before asking for a decision.
+- Lets you import existing files manually in capped batches.
+- Recovers interrupted operations without guessing when state is ambiguous.
 
-## Funcionalidades
+**Filing decisions**
 
-**Vigilância e recolha**
+- The popup shows the suggested subject and type and waits for your decision;
+  it can also close by itself after N seconds, if you enable that in Settings.
+- Lets you choose subject, content type, final name and an optional task with
+  a due date.
+- Detects when the same file is already in the catalog and shows where it is:
+  you can open the existing one or replace the previous version, which stays
+  in the folder with the "previous version" suffix and is restored when you
+  undo the filing.
+- "Later" keeps the file in the inbox; "✕" and "Not university material"
+  return it to its source folder.
+- Files without silently overwriting existing files.
+- Moves an already-filed document to another type of the same subject or to
+  another subject, keeping the catalog and search up to date.
 
-- Vigia apenas os novos ficheiros elegíveis na pasta Downloads configurada; as
-  extensões aceites são configuráveis nas Definições.
-- Move cada ficheiro para uma caixa de entrada segura antes de pedir uma decisão.
-- Permite importar ficheiros existentes manualmente em lotes limitados.
-- Recupera operações interrompidas sem adivinhar quando o estado é ambíguo.
+**Search and indexing**
 
-**Decisão de organização**
+- Keeps local full-text search over file names and content of the supported
+  formats (PDF, DOCX, PPTX, XLSX, IPYNB, Markdown, TXT and CSV), backed by a
+  SQLite FTS index.
+- Reads scanned (image-only) PDFs with Windows OCR when the option is on.
+- Lets you adopt into the catalog a file that already exists in a subject
+  folder without moving it, and mark reconciliation findings as reviewed.
+- Keeps history and lets you undo the most recent filing.
 
-- O popup mostra a sugestão de disciplina e tipo e espera pela tua decisão;
-  também pode fechar sozinho após N segundos, se ativares essa opção nas
-  Definições.
-- Permite escolher disciplina, tipo de conteúdo, nome final e uma tarefa
-  opcional com prazo.
-- Deteta quando o mesmo ficheiro já existe no catálogo e mostra onde está:
-  podes abrir o existente ou substituir a versão anterior, que fica na pasta
-  com o sufixo «versão anterior» e é reposta se desfizeres a organização.
-- "Mais tarde" mantém o ficheiro na Caixa de Entrada; "✕" e "Não é da
-  universidade" devolvem-no à pasta de origem.
-- Organiza sem substituir silenciosamente ficheiros existentes.
-- Move um documento já organizado para outro tipo da mesma disciplina ou para
-  outra disciplina, mantendo o catálogo e a pesquisa atualizados.
+**Study organisation**
 
-**Pesquisa e indexação**
+- Manage subjects with code, colour, keywords and folder, plus their
+  per-content-type folders.
+- Keeps tasks with due dates, a calendar and a configurable lead-time
+  reminder.
 
-- Mantém pesquisa textual local no nome e no conteúdo dos formatos suportados
-  (PDF, DOCX, PPTX, XLSX, IPYNB, Markdown, TXT e CSV), com índice SQLite FTS.
-- Lê PDFs digitalizados (só imagem) com o OCR do Windows, quando a opção está
-  ativa.
-- Permite adotar no catálogo um ficheiro já existente numa disciplina sem o
-  mover, e marcar ocorrências de reconciliação como revistas.
-- Mantém histórico e permite desfazer a organização mais recente.
+**Windows integration**
 
-**Organização de estudo**
+- Explorer context menu: "Organize with SortInator" for files with the
+  configured extensions; "Return" puts them back in their source folder.
+- Native clickable notifications ("Show in folder") that keep working after
+  the app closes.
+- Lives in the notification area and can start with the Windows session.
+- Five themes and an interface in Portuguese, English, Spanish or French.
 
-- Gere disciplinas com código, cor, palavras-chave e arquivo, e as respetivas
-  pastas por tipo de conteúdo.
-- Mantém tarefas com prazo, calendário e aviso antecipado configurável.
+**Keyboard navigation**
 
-**Integração com o Windows**
+- `Ctrl+K` opens the command palette: type to filter and run actions such as
+  navigating between pages, importing from Downloads, pausing or resuming
+  watching, undoing the latest filing, checking for updates, opening the
+  University folder or creating a backup.
+- `Ctrl+F` focuses the notes search; `Ctrl+1` to `Ctrl+6` open the pages
+  directly.
+- In the filing popup, keys `1` to `9` pick the subject.
 
-- Menu de contexto do Explorador: "Organizar com SortInator" para os
-  ficheiros com as extensões configuradas; "Devolver" repõe-nos na pasta de
-  origem.
-- Notificações nativas clicáveis ("Mostrar na pasta") que continuam
-  funcionais depois de fechar a app.
-- Vive na área de notificação e pode iniciar com a sessão do Windows.
-- Cinco temas e interface em português, inglês, espanhol ou francês.
+**Backups**
 
-**Navegação por teclado**
+- Creates copies of the catalog and settings, exports them as a portable
+  `.zip`, imports them back and restores them with full validation.
+- Manual backups are never deleted automatically.
 
-- `Ctrl+K` abre a paleta de comandos: escreve para filtrar e executa ações como
-  navegar entre páginas, importar de Downloads, pausar ou retomar a vigilância,
-  desfazer a última organização, procurar atualizações, abrir a pasta
-  Universidade ou criar uma cópia de segurança.
-- `Ctrl+F` foca a pesquisa de apontamentos; `Ctrl+1` a `Ctrl+6` abrem as
-  páginas diretamente.
-- No popup de organização, as teclas `1` a `9` escolhem a disciplina.
+## File protection
 
-**Cópias de segurança**
+SortInator never replaces or deletes documents silently. It waits for a
+download to stop being temporary and stay stable, uses alternative names such
+as `name (2).pdf` on collisions, and journals every move so it can recover
+after an interruption. Ambiguous states stay visible for manual review
+instead of being guessed away.
 
-- Cria cópias do catálogo e das definições, exporta-as num `.zip` portátil,
-  importa-as de volta e restaura-as com validação completa.
-- As cópias manuais nunca são apagadas automaticamente.
+Replacing a previous version never erases the existing file: the old one is
+renamed with the "previous version" suffix and the pair of moves is reverted
+when you undo the filing.
 
-## Proteção dos ficheiros
+Files that were already in Downloads before startup are not imported
+automatically. Manual import requires confirmation and processes at most 25
+files per batch.
 
-O SortInator não substitui nem elimina documentos silenciosamente. Aguarda que
-um download deixe de ser temporário e permaneça estável, usa nomes alternativos
-como `nome (2).pdf` em caso de colisão e regista cada movimento para permitir
-recuperação depois de uma interrupção. Estados ambíguos ficam visíveis para
-revisão manual em vez de serem corrigidos por tentativa.
+Backups and restores cover only the catalog and settings. Neither updates
+nor restores ever touch the University folder or Downloads.
 
-Substituir a versão anterior nunca apaga o ficheiro existente: o antigo é
-renomeado com o sufixo «versão anterior» e o par de movimentos é revertido
-quando desfazes a organização.
+When quitting, file operations already accepted finish before the app
+closes. While they run, saving settings or installing an update is blocked
+with an explanation. Copies interrupted mid-transfer stay for manual review
+in the inbox.
 
-Ficheiros que já estavam em Downloads antes do arranque não são importados
-automaticamente. A importação manual exige confirmação e processa no máximo 25
-ficheiros de cada vez.
+## Install on Windows
 
-As cópias de segurança e as reposições abrangem apenas o catálogo e as
-definições. Nem as atualizações nem as restaurações tocam na pasta Universidade
-nem em Downloads.
+The per-user installer is the recommended way. It installs into
+`%LOCALAPPDATA%\Programs\SortInator` without asking for administrator
+rights, creates the Start Menu entry (and a desktop shortcut if you want)
+and shows up under **Installed apps** for uninstalling.
 
-Ao sair, as operações de ficheiros já aceites terminam antes de fechar a app.
-Enquanto estiverem em curso, guardar definições ou instalar uma atualização
-fica bloqueado com uma explicação. Cópias interrompidas durante a recolha
-ficam para revisão manual na Caixa de Entrada.
-
-## Instalação no Windows
-
-O instalador por utilizador é a forma recomendada. Instala em
-`%LOCALAPPDATA%\Programs\SortInator` sem pedir administrador, cria a entrada
-no menu Iniciar (e, se quiseres, um atalho no ambiente de trabalho) e aparece
-em **Aplicações instaladas** para desinstalar.
-
-1. Abre a versão pretendida na página
-   [Releases](https://github.com/Parrolas/SortInator/releases).
-2. Transfere `SortInator-<versão>-Setup.exe` e o ficheiro `.sha256` com o
-   mesmo nome.
-3. Verifica o SHA-256 no PowerShell:
+1. Open the version you want on the
+   [Releases](https://github.com/Parrolas/SortInator/releases) page.
+2. Download `SortInator-<version>-Setup.exe` and the matching `.sha256`
+   file.
+3. Verify the SHA-256 in PowerShell:
 
    ```powershell
-   Get-FileHash .\SortInator-<versão>-Setup.exe -Algorithm SHA256
-   Get-Content .\SortInator-<versão>-Setup.exe.sha256
+   Get-FileHash .\SortInator-<version>-Setup.exe -Algorithm SHA256
+   Get-Content .\SortInator-<version>-Setup.exe.sha256
    ```
 
-4. Confirma que os dois valores são iguais e executa o `Setup.exe`. Fecha o
-   SortInator pelo menu do ícone antes de instalar ou desinstalar.
+4. Confirm both values match and run the `Setup.exe`. Quit SortInator from
+   the tray icon menu before installing or uninstalling.
 
-### Versão portátil (ZIP)
+### Portable version (ZIP)
 
-Também podes usar `SortInator-<versão>-windows-x64.zip`. Verifica o `.sha256`
-da mesma forma, extrai todo o ZIP para uma pasta permanente e executa
-`SortInator.exe`. Não movas apenas o executável: a pasta `_internal` que o
-acompanha também é necessária.
+You can also use `SortInator-<version>-windows-x64.zip`. Verify the
+`.sha256` the same way, extract the whole ZIP into a permanent folder and
+run `SortInator.exe`. Don't move just the executable: the `_internal` folder
+that ships with it is required too.
 
-O executável ainda não tem assinatura de código. O Microsoft Defender
-SmartScreen pode mostrar "O Windows protegeu o PC" na primeira execução. Se o
-ficheiro veio da página oficial e o SHA-256 coincide, escolhe **Mais
-informações** e depois **Executar mesmo assim**. Não ignores o aviso se a
-origem ou o hash não forem os esperados.
+The executable is not code-signed yet. Microsoft Defender SmartScreen may
+show "Windows protected your PC" on first run. If the file came from the
+official page and the SHA-256 matches, choose **More info** and then **Run
+anyway**. Never ignore the warning if the source or the hash is not what you
+expect.
 
-Na primeira execução, escolhe a pasta Universidade. Por predefinição, a
-aplicação usa `Documentos\Universidade`, cria `_Caixa de Entrada` dentro dessa
-pasta e vigia a pasta Downloads conhecida pelo Windows. Tudo pode ser alterado
-em **Definições**, incluindo as extensões aceites, o modelo do nome e as
-notificações.
+On first run you choose the University folder. By default the app uses
+`Documents\Universidade`, creates `_Caixa de Entrada` (the inbox) inside it
+and watches the Windows-known Downloads folder. Everything can be changed in
+**Settings**, including the accepted extensions, the name template and
+notifications.
 
-## Área de notificação
+## Tray area
 
-Fechar a janela principal não termina a aplicação: esconde-a na área de
-notificação para continuar a vigiar Downloads. O menu do ícone permite abrir a
-Caixa de Entrada, pausar a vigilância, desfazer a última organização, procurar
-e instalar atualizações, abrir as Definições e sair.
+Closing the main window does not end the app: it hides to the tray to keep
+watching Downloads. The icon menu lets you open the inbox, pause watching,
+undo the latest filing, check and install updates, open Settings and quit.
 
-As notificações de arquivo são nativas do Windows: clicar numa abre a pasta com
-o ficheiro selecionado, mesmo depois de fechar a app. Num lote com vários
-destinos, a notificação lista os ficheiros numa janela com a ação "Mostrar na
-pasta".
+Filing notifications are native Windows toasts: clicking one opens the
+folder with the file selected, even after the app has closed. In a batch
+with several destinations, the notification lists the files in a window
+with a "Show in folder" action.
 
-## Cópias de segurança
+## Backups
 
-Em **Definições → Cópias de segurança** podes criar uma cópia manual do
-catálogo e das definições, exportá-la para um `.zip` portátil (por exemplo,
-para uma pen ou para outra pasta) e restaurá-la mais tarde.
+In **Settings → Backups** you can create a manual copy of the catalog and
+settings, export it as a portable `.zip` (to a USB stick or another folder,
+for example) and restore it later.
 
-- **Criar cópia agora** cria uma cópia interna em
+- **Create backup now** creates an internal copy under
   `%LOCALAPPDATA%\SortInator\backups`.
-- **Criar e exportar .zip…** cria a cópia e escreve também um ficheiro
-  `SortInator-backup-<data>.zip` na pasta que escolheres.
-- **Restaurar…** lista as cópias disponíveis (manuais, anteriores a uma
-  atualização e anteriores a uma reposição) e permite importar um `.zip`. A
-  reposição valida o manifesto e todos os hashes, cria primeiro uma cópia de
-  segurança automática dos dados atuais e só depois substitui o catálogo e as
-  definições; a app reabre sozinha para concluir. Os teus documentos não são
-  tocados.
-- As cópias manuais nunca são apagadas automaticamente. As cópias automáticas
-  (antes de atualizar ou de repor) mantêm as duas mais recentes de cada tipo,
-  no máximo durante 30 dias.
+- **Create and export .zip…** creates the copy and also writes a
+  `SortInator-backup-<date>.zip` into the folder you choose.
+- **Restore…** lists the available backups (manual, pre-update and
+  pre-restore) and lets you import a `.zip`. Restoring validates the
+  manifest and every hash, first creates an automatic backup of the current
+  data, and only then replaces the catalog and settings; the app reopens by
+  itself to finish. Your documents are not touched.
+- Manual backups are never deleted automatically. Automatic backups (taken
+  before updating or restoring) keep the two newest of each kind, for at
+  most 30 days.
 
-Uma cópia abrange o catálogo, o histórico, o índice de pesquisa e as
-definições — não inclui os documentos da pasta Universidade, que continuam a
-ser os ficheiros originais.
+A backup covers the catalog, history, search index and settings — it does
+not include the University folder documents, which remain the original
+files.
 
-## Dados e privacidade
+## Data & privacy
 
-O SortInator trabalha localmente. Não envia ficheiros, nomes, conteúdo ou
-estatísticas para serviços externos; a verificação de atualizações contacta
-apenas o GitHub para ler o número da versão mais recente.
+SortInator works locally. It never sends files, names, content or usage
+statistics to external services; the update check only contacts GitHub to
+read the latest version number.
 
-Os dados internos ficam em `%LOCALAPPDATA%\SortInator`:
+Internal data lives in `%LOCALAPPDATA%\SortInator`:
 
-- `settings.json`: definições da aplicação.
-- `sortinator.db`: catálogo, histórico e índice de pesquisa SQLite.
-- `backups\`: cópias de segurança do catálogo e das definições.
-- `updates\`: estado transitório das atualizações.
-- `sortinator.log`: diagnóstico local com rotação.
+- `settings.json`: application settings.
+- `sortinator.db`: SQLite catalog, history and search index.
+- `backups\`: catalog and settings backups.
+- `updates\`: transient update state.
+- `sortinator.log`: local rotating diagnostics.
 
-Os documentos continuam na pasta Universidade escolhida pelo utilizador. A
-aplicação nunca usa a base de dados como cópia dos documentos.
+Your documents stay in the University folder you choose. The app never uses
+the database as a copy of your documents.
 
-## Atualização e reversão
+## Update & rollback
 
-A app verifica automaticamente se existe uma versão nova no arranque (podes
-desativar isto nas Definições). Quando existe, aparece "Instalar atualização"
-no menu do ícone; um clique transfere, verifica o SHA-256 publicado e a
-versão do pacote, prepara a atualização numa área isolada e só depois reinicia
-para aplicar. Um assistente dedicado espera que a app antiga termine, troca as
-pastas com verificação de cada passo e só confirma quando a nova versão arranca
-com sucesso. Os teus dados ficam sempre em `%LOCALAPPDATA%\SortInator` e nunca
-são tocados pela atualização.
+The app automatically checks for a new version at startup (you can turn
+this off in Settings). When one exists, "Install update" appears in the
+tray icon menu; one click downloads it, verifies the published SHA-256 and
+package version, stages the update in an isolated area and only then
+restarts to apply it. A dedicated helper waits for the old app to exit,
+swaps the folders with per-step verification and only confirms once the new
+version starts successfully. Your data always stays in
+`%LOCALAPPDATA%\SortInator` and is never touched by the update.
 
-A app segue as versões estáveis publicadas. Uma versão prévia (prerelease)
-instala-se manualmente com o respetivo Setup ou ZIP.
+The app follows published stable releases. A prerelease is installed
+manually with its own Setup or ZIP.
 
-Antes de qualquer migração da base de dados, a app cria uma cópia de segurança
-automática (base de dados e definições) e só a fecha depois de um arranque
-completo. Se a nova versão falhar antes de ficar saudável — incluindo depois da
-troca de pastas — a versão e os dados anteriores são repostos automaticamente e
-o resultado é mostrado uma vez no arranque seguinte. Depois de saudável, nunca
-há reposição automática de dados: a versão anterior é mantida para recuperação
-manual.
+Before any database migration the app creates an automatic backup (database
+and settings) and only seals it after a full successful startup. If the new
+version fails before it becomes healthy — including after the folder swap —
+the previous version and data are restored automatically and the outcome is
+shown once at the next startup. After the app is healthy there is never an
+automatic data rollback: the previous version is kept for manual recovery.
 
-A versão anterior é mantida numa pasta de segurança até o novo arranque correr
-com sucesso, servindo de reversão imediata se algo correr mal.
+The previous version is kept in a rollback folder until the new startup
+runs successfully, serving as an immediate rollback if anything goes wrong.
 
-Antes de atualizar manualmente:
+Before updating manually:
 
-1. Usa **Sair** no ícone da área de notificação.
-2. Cria uma cópia de segurança em **Definições → Cópias de segurança** (ou
-   copia a pasta `%LOCALAPPDATA%\SortInator`).
-3. Conserva o Setup/ZIP da versão atual até confirmares a nova versão.
-4. Instala o novo Setup ou extrai a nova versão para uma pasta nova e
-   executa-a.
+1. Use **Quit** on the notification-area icon.
+2. Create a backup in **Settings → Backups** (or copy the
+   `%LOCALAPPDATA%\SortInator` folder).
+3. Keep the Setup/ZIP of the current version until you have confirmed the
+   new one.
+4. Install the new Setup or extract the new version into a fresh folder and
+   run it.
 
-As migrações da base de dados são automáticas. Para reverter, termina a
-aplicação, volta ao Setup/ZIP anterior e restaura também a cópia dos dados
-feita por essa versão. Não mistures uma base de dados já migrada com um
-executável mais antigo. Os documentos da pasta Universidade não precisam de ser
-restaurados.
+Database migrations are automatic. To roll back, quit the app, go back to
+the previous Setup/ZIP and also restore the data backup made by that
+version. Do not mix an already-migrated database with an older executable.
+The documents in the University folder never need restoring.
 
-## Desinstalação
+## Uninstall
 
-**Instalador (recomendado):**
+**Installer (recommended):**
 
-1. Em **Definições**, desativa **Iniciar o SortInator quando entro no
-   Windows** e guarda (a desinstalação também limpa esse registo).
-2. Usa **Sair** no ícone da área de notificação.
-3. Em **Aplicações instaladas** do Windows, desinstala **SortInator**.
+1. In **Settings**, turn off **Start SortInator when I sign in to Windows**
+   and save (uninstalling also clears that registration).
+2. Use **Quit** on the notification-area icon.
+3. In Windows **Installed apps**, uninstall **SortInator**.
 
-A desinstalação remove o programa, os atalhos e os registos no Windows, mas
-mantém `%LOCALAPPDATA%\SortInator` para que possas reinstalar sem perder o
-catálogo.
+Uninstalling removes the program, shortcuts and Windows registrations, but
+keeps `%LOCALAPPDATA%\SortInator` so you can reinstall without losing the
+catalog.
 
-**Versão portátil:**
+**Portable version:**
 
-1. Usa **Sair** no ícone da área de notificação.
-2. Elimina a pasta onde extraíste a aplicação.
-3. Se também quiseres apagar o catálogo, histórico, definições, cópias e logs,
-   elimina `%LOCALAPPDATA%\SortInator`.
+1. Use **Quit** on the notification-area icon.
+2. Delete the folder where you extracted the app.
+3. If you also want to erase the catalog, history, settings, backups and
+   logs, delete `%LOCALAPPDATA%\SortInator`.
 
-Em qualquer dos casos, a desinstalação não elimina a pasta Universidade nem os
-documentos nela guardados.
+In either case, uninstalling never deletes the University folder or the
+documents inside it.
 
-## Limitações atuais
+## Current limitations
 
-- Os PDFs digitalizados (só imagem) são lidos pelo OCR do Windows quando a
-  opção está ativa nas Definições. As línguas preferidas seguem o idioma da
-  app (português, inglês, espanhol ou francês), com recurso ao inglês; sem o
-  pacote de idioma instalado, esses ficheiros entram na pesquisa apenas pelo
-  nome.
-- `.doc`, `.ppt`, `.xls` e ficheiros OneNote podem ser organizados, mas o
-  conteúdo não é indexado.
-- Documentos com mais de 50 MB são organizados sem indexação para limitar
-  memória em segundo plano.
-- O texto indexado por documento é limitado para proteger a base de dados;
-  documentos muito longos ficam pesquisáveis pelo início.
-- As sugestões aprendidas dependem de padrões de nome repetidos e continuam a
-  exigir confirmação.
-- O menu de contexto do Explorador só aparece para as extensões configuradas
-  nas Definições.
-- O popup de organização trata um ficheiro de cada vez; os restantes ficam em
-  fila até serem revistos.
-- As cópias de segurança abrangem o catálogo e as definições, não os
-  documentos.
-- Mudanças entre discos diferentes preservam conteúdo, datas e atributos
-  básicos, mas não fluxos de dados alternativos (ADS), ACLs, encriptação nem
-  dispersão; estes casos ficam registados no diagnóstico.
+- Scanned (image-only) PDFs are read by Windows OCR when the option is
+  enabled in Settings. Preferred languages follow the app language
+  (Portuguese, English, Spanish or French), falling back to English;
+  without the language pack installed, those files are searchable by name
+  only.
+- `.doc`, `.ppt`, `.xls` and OneNote files can be filed, but their content
+  is not indexed.
+- Documents over 50 MB are filed without indexing to limit background
+  memory.
+- The text indexed per document is capped to protect the database; very
+  long documents stay searchable by their beginning.
+- Learned suggestions depend on repeated naming patterns and still require
+  confirmation.
+- The Explorer context menu only appears for the extensions configured in
+  Settings.
+- The filing popup handles one file at a time; the rest queue up until they
+  are reviewed.
+- Backups cover the catalog and settings, not the documents.
+- Moves between different drives preserve content, dates and basic
+  attributes, but not alternate data streams (ADS), ACLs, encryption or
+  fragmentation; those cases are recorded in the diagnostics.
 
-## Contribuir
+## Contributing
 
-As instruções de desenvolvimento, build e publicação estão em
-[CONTRIBUTING.md](CONTRIBUTING.md). O
-[roteiro de uma semana de uso](docs/daily-use-checklist.md) ajuda a registar
-problemas concretos antes de escolher a próxima melhoria.
+Development, build and release instructions live in
+[CONTRIBUTING.md](CONTRIBUTING.md). The
+[one-week daily-use checklist](docs/daily-use-checklist.md) helps you log
+concrete issues before choosing the next improvement.
 
-## Política de assinatura de código
+## Code-signing policy
 
-**Code signing policy.** Free code signing provided by SignPath.io, certificate by
-SignPath Foundation.
+**Code signing policy.** Free code signing provided by SignPath.io,
+certificate by SignPath Foundation.
 
-As versões publicadas do SortInator são assinadas digitalmente através do programa
-de código aberto da SignPath Foundation, que verifica que cada binário foi
-construído a partir deste repositório. A chave privada do certificado é gerada e
-guardada no módulo de segurança (HSM) da SignPath; nunca sai de lá.
+Published SortInator releases are digitally signed through the SignPath
+Foundation open-source program, which verifies that every binary was built
+from this repository. The certificate private key is generated and stored
+in SignPath's hardware security module (HSM); it never leaves it.
 
-Funções da equipa (todas desempenhadas por José Parrolas,
+Team roles (all held by José Parrolas,
 [@Parrolas](https://github.com/Parrolas)):
 
-- Committers e revisores: o mantenedor do repositório.
-- Aprovadores: o mantenedor do repositório.
+- Committers and reviewers: the repository maintainer.
+- Approvers: the repository maintainer.
 
-Política de privacidade: [PRIVACY.md](PRIVACY.md) — a aplicação funciona
-localmente e não transfere informação para outros sistemas em rede, exceto a
-verificação de atualizações no GitHub quando está ativa. Código de conduta:
+Privacy policy: [PRIVACY.md](PRIVACY.md) — the app runs locally and does
+not transfer information to other networked systems, except the GitHub
+update check when enabled. Code of conduct:
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-## Licenças
+## Licenses
 
-O código do SortInator é distribuído sob a licença MIT em `LICENSE`. O pacote
-Windows inclui componentes de terceiros com licenças próprias, documentados em
-`LICENSES/THIRD-PARTY-NOTICES.md` e nos respetivos textos de licença.
+SortInator's code is distributed under the MIT license in `LICENSE`. The
+Windows package includes third-party components under their own licenses,
+documented in `LICENSES/THIRD-PARTY-NOTICES.md` and the respective license
+texts.
