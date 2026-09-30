@@ -16,9 +16,9 @@ Windows](#install-on-windows) · [Tray area](#tray-area) ·
 
 ## Video
 
-[![SortInator intro video](https://github.com/user-attachments/assets/93e18966-5711-49b7-adc9-3c25867b47b5)](https://github.com/user-attachments/assets/e362318e-088a-42be-adcc-72284971a93a)
+[![SortInator intro video](assets/media/launch-video-en-poster.jpg)](assets/media/launch-video-en.mp4)
 
-*Intro video — 22 seconds (Portuguese narration). Click to watch with music.*
+*Intro video — 22 seconds. Click to watch with music.*
 
 ## Features
 
