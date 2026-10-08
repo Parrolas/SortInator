@@ -45,7 +45,8 @@ def payload_executable(app_dir: Path) -> Path:
 
 
 def run(executable: Path, *arguments: str, expected: int = 0) -> None:
-    result = subprocess.run(
+    # CI-only harness: fixed argv from the test itself, no shell.
+    result = subprocess.run(  # nosemgrep
         [str(executable), *arguments], creationflags=subprocess.CREATE_NO_WINDOW, timeout=180
     )
     if result.returncode != expected:
@@ -176,7 +177,8 @@ def main() -> None:
             helper.terminate()
         if new_pid is not None:
             # Only the idle fixture app launched by this transaction; no transfers pending.
-            subprocess.run(
+            # Fixed binary; the PID is the fixture's own child.
+            subprocess.run(  # nosemgrep
                 ["taskkill.exe", "/PID", str(new_pid), "/F"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 capture_output=True,

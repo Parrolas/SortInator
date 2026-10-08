@@ -772,7 +772,8 @@ public static class Program {
         + str(executable).replace("'", "''")
         + "' -OutputType WindowsApplication"
     )
-    completed = subprocess.run(
+    # Test-only compiler probe: fixed flags, no shell.
+    completed = subprocess.run(  # nosemgrep
         [
             powershell,
             "-NoProfile",
@@ -793,7 +794,8 @@ public static class Program {
 
 
 def _start_old_process(powershell: str) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(
+    # Test-only sleeper: fixed command, no shell.
+    return subprocess.Popen(  # nosemgrep
         [powershell, "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 15"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -1044,7 +1046,8 @@ def test_real_powershell_helper_keeps_healthy_install_when_cleanup_fails(
         )
         # A process with its working directory inside the rollback folder
         # keeps Windows from deleting it, simulating a locked old file.
-        folder_holder = subprocess.Popen(
+        # Test-only lock holder: fixed command, no shell.
+        folder_holder = subprocess.Popen(  # nosemgrep
             [powershell, "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 20"],
             cwd=str(transaction.rollback_dir),
             stdin=subprocess.DEVNULL,

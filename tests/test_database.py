@@ -1371,3 +1371,68 @@ def test_drop_file_record_refused_while_a_version_rename_is_pending(
 
     assert not dropped
     assert database.cancel_version_rename(event.id)
+
+
+def test_checked_identifier_rejects_injection_shape() -> None:
+    from organizador.db import _checked_identifier
+
+    assert _checked_identifier("files", kind="table") == "files"
+    for hostile in ("files; DROP TABLE files", 'files"', "files)", "", "1files", "file-id"):
+        with pytest.raises(ValueError):
+            _checked_identifier(hostile, kind="table")
+
+
+def test_pragma_columns_rejects_unknown_table(database: Database) -> None:
+    from organizador.db import _pragma_columns
+
+    with database.connect() as connection:
+        assert "content_sha256" in _pragma_columns(connection, "files")
+        with pytest.raises(ValueError):
+            _pragma_columns(connection, "sqlite_master; --")
+
+
+def test_ensure_columns_rejects_unknown_table_and_declaration(database: Database) -> None:
+    from organizador.db import Database as DatabaseClass
+
+    with database.connect() as connection:
+        with pytest.raises(ValueError):
+            DatabaseClass._ensure_columns(
+                connection, "subjects", [("content_sha256", "TEXT NOT NULL DEFAULT ''")]
+            )
+        with pytest.raises(ValueError):
+            DatabaseClass._ensure_columns(
+                connection, "files", [("content_sha256", "INTEGER; DROP TABLE files")]
+            )
+
+
+def test_ensure_columns_adds_missing_hash_columns(tmp_path: Path) -> None:
+    import sqlite3
+
+    from organizador.db import Database as DatabaseClass
+
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("CREATE TABLE files (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE inbox (id INTEGER PRIMARY KEY)")
+        DatabaseClass._ensure_columns(
+            connection,
+            "files",
+            [
+                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
+                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ],
+        )
+        names = {row[1] for row in connection.execute("PRAGMA table_info(files)").fetchall()}
+        assert {"content_sha256", "hash_fingerprint"} <= names
+
+
+def test_list_tasks_both_branches(database: Database, subject: Subject) -> None:
+    from datetime import date as date_class
+
+    open_task = database.add_task("Em curso", subject.id, date_class(2026, 10, 20))
+    done_task = database.add_task("Feita", subject.id, date_class(2026, 10, 21))
+    database.set_task_completed(done_task.id, True)
+
+    assert {task.id for task in database.list_tasks()} == {open_task.id, done_task.id}
+    assert [task.id for task in database.list_tasks(include_completed=False)] == [open_task.id]

@@ -74,8 +74,14 @@ def _catalogue_counts(path: Path) -> dict[str, int] | None:
     try:
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
+            # _CATALOGUE_TABLES is a module constant; names cannot be bound
+            # parameters, so they are interpolated from that fixed tuple only.
             counts = {
-                table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                table: int(
+                    connection.execute(  # nosemgrep
+                        f"SELECT COUNT(*) FROM {table}"
+                    ).fetchone()[0]
+                )
                 for table in _CATALOGUE_TABLES
             }
             check = connection.execute("PRAGMA quick_check").fetchone()

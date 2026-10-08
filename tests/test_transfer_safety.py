@@ -353,7 +353,8 @@ def partial_copy(kernel32, source, destination, size):
 paths._copy_windows_handles = partial_copy
 FilingService(config, Database(config.database_path)).ingest(Path(sys.argv[2]))
 """
-    process = subprocess.Popen(
+    # Test-only child driver: fixed argv shape, no shell.
+    process = subprocess.Popen(  # nosemgrep
         [sys.executable, "-c", code, str(app_config.data_dir), str(source), str(marker)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,

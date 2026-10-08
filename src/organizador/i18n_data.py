@@ -930,6 +930,10 @@ EN_STRINGS: dict[str, str] = {
     "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "There are two populated databases ({current}: {current_subjects} subjects; {legacy}: {legacy_subjects} subjects). The app is using {current}; check sortinator.log to review.",
     "Transferência em curso": "Transfer in progress",
     "Há uma transferência em curso. Tenta novamente em instantes.": "A file transfer is already running. Try again in a moment.",
+    "Atualizações": "Updates",
+    "Versão instalada: {version}": "Installed version: {version}",
+    "Procurar atualizações": "Check for updates",
+    "SortInator {version} está disponível.": "SortInator {version} is available.",
 }
 
 ES_STRINGS: dict[str, str] = {
@@ -1895,6 +1899,10 @@ ES_STRINGS: dict[str, str] = {
     "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "Hay dos bases de datos con contenido ({current}: {current_subjects} asignaturas; {legacy}: {legacy_subjects} asignaturas). La app está usando {current}; consulta sortinator.log para revisar.",
     "Transferência em curso": "Transferencia en curso",
     "Há uma transferência em curso. Tenta novamente em instantes.": "Ya hay una transferencia en curso. Inténtalo de nuevo en un momento.",
+    "Atualizações": "Actualizaciones",
+    "Versão instalada: {version}": "Versión instalada: {version}",
+    "Procurar atualizações": "Buscar actualizaciones",
+    "SortInator {version} está disponível.": "SortInator {version} está disponible.",
 }
 
 FR_STRINGS: dict[str, str] = {
@@ -2875,4 +2883,8 @@ FR_STRINGS: dict[str, str] = {
     "Há duas bases de dados com conteúdo ({current}: {current_subjects} disciplinas; {legacy}: {legacy_subjects} disciplinas). A app está a usar {current}; consulta sortinator.log para reveres.": "Il y a deux bases de données non vides ({current} : {current_subjects} matières ; {legacy} : {legacy_subjects} matières). L'appli utilise {current} ; consulte sortinator.log pour vérifier.",
     "Transferência em curso": "Transfert en cours",
     "Há uma transferência em curso. Tenta novamente em instantes.": "Un transfert est déjà en cours. Réessaie dans un instant.",
+    "Atualizações": "Mises à jour",
+    "Versão instalada: {version}": "Version installée : {version}",
+    "Procurar atualizações": "Rechercher des mises à jour",
+    "SortInator {version} está disponível.": "SortInator {version} est disponible.",
 }

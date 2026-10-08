@@ -1,5 +1,6 @@
 """Persistent, token-addressed Windows notifications for filed documents."""
 
+# ElementTree builds toast XML only; nothing here parses XML, so no XXE surface exists.
 from __future__ import annotations
 
 import json
@@ -8,7 +9,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring  # nosemgrep
 
 from organizador.db import Database
 from organizador.models import FiledDocument

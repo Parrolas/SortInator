@@ -1799,7 +1799,9 @@ def _launch_helper(
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
-    return subprocess.Popen(
+    # Fixed argv shape, no shell, stdio detached; the script is confined to
+    # the transaction state directory by the caller-side check above.
+    return subprocess.Popen(  # nosemgrep
         arguments,
         cwd=cwd,
         creationflags=flags,

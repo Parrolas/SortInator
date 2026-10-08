@@ -1,5 +1,6 @@
 """Persistent activation routing uses test documents and mocked Explorer only."""
 
+# Asserts on generated toast XML; no untrusted parsing happens here.
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
-from xml.etree import ElementTree
+from xml.etree import ElementTree  # nosemgrep
 
 import pytest
 from PySide6.QtWidgets import QApplication

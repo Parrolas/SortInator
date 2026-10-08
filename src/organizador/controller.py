@@ -611,6 +611,12 @@ class AppController(QObject):
         self.tray.settings_requested.connect(lambda: self.show_main("definicoes"))
         self.tray.check_updates_requested.connect(lambda: self._begin_update_check(automatic=False))
         self.tray.install_update_requested.connect(self._install_pending_update)
+        self.main_window.settings_page.check_updates_requested.connect(
+            lambda: self._begin_update_check(automatic=False)
+        )
+        self.main_window.settings_page.install_update_requested.connect(
+            self._install_pending_update
+        )
         self.tray.quit_requested.connect(self.shutdown)
         self.update_check_finished.connect(self._on_update_check_finished)
         self.update_install_finished.connect(self._on_update_install_finished)
@@ -2238,7 +2244,8 @@ class AppController(QObject):
             arguments=arguments,
         )
         try:
-            subprocess.Popen(
+            # Fixed binary and flags, no shell; only the quoted exe path varies.
+            subprocess.Popen(  # nosemgrep
                 ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -2417,11 +2424,17 @@ class AppController(QObject):
                         "as atualizações aplicam-se apenas à versão instalada."
                     ),
                 )
+                self.main_window.settings_page.set_update_status(
+                    _("Sem atualizações nesta instalação")
+                )
             return
         self._update_checking = True
         self._update_check_generation += 1
         generation = self._update_check_generation
         self.tray.set_update_state(checking=True, version=self._pending_version_text())
+        settings_page = self.main_window.settings_page
+        settings_page.set_update_busy(True)
+        settings_page.set_update_status(_("A procurar atualizações…"))
 
         def run() -> None:
             try:
@@ -2440,12 +2453,21 @@ class AppController(QObject):
             LOGGER.debug("Ignoring stale update check result")
             return
         self._update_checking = False
+        settings_page = self.main_window.settings_page
+        settings_page.set_update_busy(False)
         if not isinstance(result, UpdateCheckResult):
             LOGGER.error("Ignoring malformed update check result")
             self.tray.set_update_state(version=self._pending_version_text())
+            settings_page.set_update_status(
+                _("Não foi possível procurar atualizações."), error=True
+            )
             return
         if result.status is updater.UpdateCheckStatus.ERROR:
             self.tray.set_update_state(version=self._pending_version_text())
+            detail = result.error or _("Não foi possível instalar a atualização.")
+            settings_page.set_update_status(
+                _("Não foi possível procurar atualizações.") + f"\n{detail}", error=True
+            )
             if automatic:
                 LOGGER.warning("Automatic update check failed: %s", result.error)
                 return
@@ -2458,6 +2480,8 @@ class AppController(QObject):
         if result.status is updater.UpdateCheckStatus.NO_UPDATE:
             self._pending_update = None
             self.tray.set_update_state(version=None)
+            settings_page.set_update_available(None)
+            settings_page.set_update_status(_("O SortInator está atualizado."))
             if not automatic:
                 self.tray.notify(
                     _("Sem atualizações"),
@@ -2471,6 +2495,10 @@ class AppController(QObject):
         self._pending_update = info
         version = ".".join(str(part) for part in info.version)
         self.tray.set_update_state(version=version)
+        settings_page.set_update_available(version)
+        settings_page.set_update_status(
+            _("SortInator {version} está disponível.").format(version=version)
+        )
         self.tray.notify(
             _("Atualização disponível"),
             _(
@@ -2510,6 +2538,9 @@ class AppController(QObject):
             _("A instalar atualização…"),
             _("A transferir e a verificar SortInator {version}.").format(version=version),
         )
+        settings_page = self.main_window.settings_page
+        settings_page.set_update_busy(True)
+        settings_page.set_update_status(_("A instalar atualização…"))
 
         def run() -> None:
             transaction: UpdateTransaction | None = None
@@ -2610,6 +2641,9 @@ class AppController(QObject):
             message,
             icon=QSystemTrayIcon.MessageIcon.Warning,
         )
+        page = self.main_window.settings_page
+        page.set_update_busy(False)
+        page.set_update_status(message, error=True)
         self._release_deferred_downloads()
 
     def _wait_for_helper_ready(self, transaction: UpdateTransaction, deadline: float) -> None:
@@ -2889,7 +2923,9 @@ class AppController(QObject):
             )
             return
         try:
-            os.startfile(path)
+            # No shell and no arguments; the exists() check above confines this
+            # to a path the user asked to open from the catalogue UI.
+            os.startfile(path)  # nosemgrep
         except OSError as exc:
             QMessageBox.warning(self.main_window, _("Não foi possível abrir"), str(exc))
 
@@ -2899,6 +2935,8 @@ class AppController(QObject):
             self._open_path(path)
             return
         try:
-            subprocess.Popen(["explorer.exe", "/select,", str(path)])
+            # Fixed binary and flag, no shell; only an exists()-checked catalogue
+            # path is passed through.
+            subprocess.Popen(["explorer.exe", "/select,", str(path)])  # nosemgrep
         except OSError as exc:
             QMessageBox.warning(self.main_window, _("Não foi possível mostrar"), str(exc))

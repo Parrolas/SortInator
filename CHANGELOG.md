@@ -2,6 +2,26 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.19.2 - 2026-10-08
+
+### Added
+
+- Settings gains an "Atualizações" section: installed version, live update
+  status, a "Procurar atualizações" button, and the pending-install action
+  mirror the tray menu, so updates are discoverable without opening the tray.
+
+### Fixed
+
+- Schema-migration SQL now passes through identifier guards: `PRAGMA`
+  inspects and hash-column additions accept only the static schema policy,
+  refusing anything shaped like injection.
+- The task list uses two static queries instead of an interpolated filter.
+- Update-helper and Explorer launches are documented fixed-shape spawns
+  (no shell, detached stdio, exists-checked paths), with matching
+  suppressions across the CI-only installer harness and test fixtures.
+- Toast XML generation is marked build-only (ElementTree never parses
+  untrusted input here).
+
 ## 0.19.1 - 2026-09-28
 
 ### Fixed

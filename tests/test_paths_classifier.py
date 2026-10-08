@@ -301,7 +301,8 @@ def test_cross_volume_fallback_warns_about_dropped_streams(
 
 
 def test_due_date_accepts_unambiguous_or_contextual_pairs() -> None:
-    assert extract_due_date("resumo_30-09.pdf") == date(date.today().year, 9, 30)
+    expected_year = date.today().year + (1 if date.today() > date(date.today().year, 9, 30) else 0)
+    assert extract_due_date("resumo_30-09.pdf") == date(expected_year, 9, 30)
     assert extract_due_date("Teste 5-3.pdf", today=date(2026, 8, 1)) == date(2027, 3, 5)
     assert extract_due_date("entrega aula 5-3.pdf", today=date(2026, 8, 1)) is None
     assert extract_due_date("ficha_2026-05-10.pdf") == date(2026, 5, 10)

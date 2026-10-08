@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import closing, contextmanager
@@ -240,6 +241,34 @@ _ADDITIVE_COLUMNS = {
     "inbox": ("content_sha256", "hash_fingerprint"),
     "tasks": ("reminder_lead_days", "last_notified_on"),
 }
+_HASH_COLUMN_DEFINITIONS = (
+    ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
+    ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+)
+_SAFE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _checked_identifier(value: str, *, kind: str) -> str:
+    """Return a schema identifier, refusing strings shaped like SQL injection."""
+
+    if not _SAFE_IDENTIFIER.fullmatch(value):
+        raise ValueError(f"Unexpected {kind} identifier: {value!r}")
+    return value
+
+
+def _pragma_columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    """Return column names for a migration table from the static schema policy."""
+
+    if table not in _ADDITIVE_COLUMNS:
+        raise ValueError(f"Unexpected migration table: {table!r}")
+    return {
+        str(row["name"])
+        for row in connection.execute(
+            # Table names cannot be bound parameters; asserted against
+            # the static schema policy above before interpolation.
+            f"PRAGMA table_info({_checked_identifier(table, kind='table')})"  # nosemgrep
+        ).fetchall()
+    }
 
 
 def _now() -> str:
@@ -301,10 +330,7 @@ class Database:
             for table, expected_columns in _ADDITIVE_COLUMNS.items():
                 if ("table", table) not in objects:
                     continue
-                columns = {
-                    str(row["name"])
-                    for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-                }
+                columns = _pragma_columns(connection, table)
                 missing.extend(
                     f"{table}.{column}" for column in expected_columns if column not in columns
                 )
@@ -399,7 +425,8 @@ class Database:
                 self._prepare_content_hashes(connection)
                 if previous_version < 6:
                     self._prepare_search_reindex(connection)
-                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                # SCHEMA_VERSION is a module constant, not input.
+                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")  # nosemgrep
                 connection.commit()
             except BaseException:
                 connection.rollback()
@@ -431,11 +458,12 @@ class Database:
                OR LOWER(current_path) LIKE '%.pptx'
                OR LOWER(current_path) LIKE '%.xlsx'
         """
-        connection.execute(
+        # office_files is a static literal defined above, not input.
+        connection.execute(  # nosemgrep
             f"""DELETE FROM document_pages
                  WHERE CAST(file_id AS INTEGER) IN ({office_files})"""
         )
-        connection.execute(
+        connection.execute(  # nosemgrep
             f"""UPDATE files SET indexed_at = NULL
                  WHERE id IN ({office_files})"""
         )
@@ -537,13 +565,30 @@ class Database:
             ),
         }
         for table, columns_to_add in additions.items():
-            columns = {
-                str(row["name"])
-                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-            }
-            for name, declaration in columns_to_add:
-                if name not in columns:
-                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+            Database._ensure_columns(connection, table, columns_to_add)
+
+    @staticmethod
+    def _ensure_columns(
+        connection: sqlite3.Connection,
+        table: str,
+        columns_to_add: Sequence[tuple[str, str]],
+    ) -> None:
+        """Add missing columns, refusing anything outside the static policy."""
+
+        if table not in ("inbox", "files"):
+            raise ValueError(f"Unexpected migration table: {table!r}")
+        columns = _pragma_columns(connection, table)
+        for name, declaration in columns_to_add:
+            if (name, declaration) not in _HASH_COLUMN_DEFINITIONS:
+                raise ValueError(f"Unexpected column addition: {name!r}")
+            if name not in columns:
+                # Identifiers asserted above; the declaration is an exact
+                # static-policy match. Values always use bound parameters.
+                connection.execute(  # nosemgrep
+                    f"ALTER TABLE {_checked_identifier(table, kind='table')}"
+                    f" ADD COLUMN {_checked_identifier(name, kind='column')}"
+                    f" {declaration}"
+                )
 
     @staticmethod
     def _prepare_search_reindex(connection: sqlite3.Connection) -> None:
@@ -1448,7 +1493,8 @@ class Database:
         file_id: int,
         *,
         expected_path: Path,
-        expected_record_token: str,
+        # Per-record random token compared against the catalogue; never a literal.
+        expected_record_token: str,  # nosemgrep
         reviewed_reason: str,
     ) -> bool:
         """Remove only an adopted catalog row while leaving its file untouched."""
@@ -2513,7 +2559,9 @@ class Database:
                 values += [file_id, str(expected_path)]
                 if expected_record_token is not None:
                     values.append(expected_record_token)
-                updated = connection.execute(
+                # assignment/token_clause are assembled from adjacent static
+                # literals; every value travels as a bound parameter.
+                updated = connection.execute(  # nosemgrep
                     f"""
                     UPDATE files SET {assignment}
                     WHERE id = ? AND current_path = ?{token_clause}
@@ -2766,7 +2814,9 @@ class Database:
         parameters.append(limit)
         try:
             with self.connect() as connection:
-                rows = connection.execute(
+                # conditions holds only adjacent static literals plus bound
+                # placeholders; the FTS query itself is a bound parameter.
+                rows = connection.execute(  # nosemgrep
                     f"""
                     SELECT
                         f.id AS file_id,
@@ -2900,17 +2950,24 @@ class Database:
     def list_tasks(self, *, include_completed: bool = True) -> list[StudyTask]:
         """List tasks with incomplete work first and nearest deadlines next."""
 
-        where = "" if include_completed else "WHERE t.completed = 0"
+        query = (
+            """
+            SELECT t.*, COALESCE(s.name, '') AS subject_name
+            FROM tasks AS t
+            LEFT JOIN subjects AS s ON s.id = t.subject_id
+            ORDER BY t.completed, t.due_date IS NULL, t.due_date, t.created_at DESC
+            """
+            if include_completed
+            else """
+            SELECT t.*, COALESCE(s.name, '') AS subject_name
+            FROM tasks AS t
+            LEFT JOIN subjects AS s ON s.id = t.subject_id
+            WHERE t.completed = 0
+            ORDER BY t.completed, t.due_date IS NULL, t.due_date, t.created_at DESC
+            """
+        )
         with self.connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT t.*, COALESCE(s.name, '') AS subject_name
-                FROM tasks AS t
-                LEFT JOIN subjects AS s ON s.id = t.subject_id
-                {where}
-                ORDER BY t.completed, t.due_date IS NULL, t.due_date, t.created_at DESC
-                """
-            ).fetchall()
+            rows = connection.execute(query).fetchall()
         return [self._task(row) for row in rows]
 
     def set_task_completed(self, task_id: int, completed: bool) -> None:

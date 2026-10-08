@@ -1371,6 +1371,8 @@ class SettingsPage(QWidget):
     """File-system, intake and login settings."""
 
     save_requested = Signal(object)
+    check_updates_requested = Signal()
+    install_update_requested = Signal()
     backup_created_requested = Signal()
     backup_export_requested = Signal()
     backup_manager_requested = Signal()
@@ -1453,7 +1455,7 @@ class SettingsPage(QWidget):
         note.setWordWrap(True)
         folders_layout.addWidget(note)
 
-        watch_layout, form = section(_("Vigilância e notificações"))
+        _watch_layout, form = section(_("Vigilância e notificações"))
         self.watch_check = ToggleSwitch(_("Vigiar novos ficheiros em Downloads"))
         self.startup_check = ToggleSwitch(_("Iniciar o SortInator quando entro no Windows"))
         self.quiet_check = ToggleSwitch(_("Silenciar notificações de arquivo"))
@@ -1479,6 +1481,30 @@ class SettingsPage(QWidget):
         self.reminder_spin.setToolTip(_("Com quantos dias de antecedência avisar prazos"))
         form.addRow(_("Avisar prazos antes"), self.reminder_spin)
 
+        updates_layout, _updates_form = section(_("Atualizações"))
+        self.check_updates_check = ToggleSwitch(_("Procurar atualizações automaticamente"))
+        updates_layout.addWidget(self.check_updates_check)
+        self.update_version_label = label("", "Muted")
+        updates_layout.addWidget(self.update_version_label)
+        self.update_status = label("", "Muted")
+        self.update_status.setWordWrap(True)
+        updates_layout.addWidget(self.update_status)
+        updates_row = QHBoxLayout()
+        updates_row.setSpacing(8)
+        self.update_check_button = button(_("Procurar atualizações"))
+        self.update_check_button.clicked.connect(
+            lambda _checked=False: self.check_updates_requested.emit()
+        )
+        self.update_install_button = button("")
+        self.update_install_button.clicked.connect(
+            lambda _checked=False: self.install_update_requested.emit()
+        )
+        self.update_install_button.setVisible(False)
+        updates_row.addWidget(self.update_check_button)
+        updates_row.addWidget(self.update_install_button)
+        updates_row.addStretch(1)
+        updates_layout.addLayout(updates_row)
+
         _appearance_layout, form = section(_("Aparência e idioma"))
         self.theme_combo = QComboBox()
         for theme_id in THEME_IDS:
@@ -1491,9 +1517,6 @@ class SettingsPage(QWidget):
         language_note = label(_("O idioma novo é aplicado ao reiniciar a app."), "Muted")
         language_note.setContentsMargins(0, 8, 0, 0)
         form.addRow("", language_note)
-        self.check_updates_check = ToggleSwitch(_("Procurar atualizações automaticamente"))
-        watch_layout.addWidget(self.check_updates_check)
-
         backup_layout, _backup_form = section(_("Cópias de segurança"))
         self.backup_status = label(_("Ainda não há cópias de segurança."), "Muted")
         self.backup_status.setWordWrap(True)
@@ -1590,6 +1613,9 @@ class SettingsPage(QWidget):
         self.watch_check.setChecked(config.watch_enabled)
         self.startup_check.setChecked(config.launch_at_login)
         self.check_updates_check.setChecked(config.check_updates_on_launch)
+        self.update_version_label.setText(
+            _("Versão instalada: {version}").format(version=__version__)
+        )
         self.ocr_check.setChecked(config.ocr_enabled)
         self.quiet_check.setChecked(config.quiet_intake)
 
@@ -1644,6 +1670,31 @@ class SettingsPage(QWidget):
         self.backup_status.setText(message)
         self.backup_status.style().unpolish(self.backup_status)
         self.backup_status.style().polish(self.backup_status)
+
+    def set_update_status(self, message: str, *, error: bool = False) -> None:
+        """Show update feedback without touching the settings status line."""
+
+        self.update_status.setObjectName("ErrorText" if error else "Muted")
+        self.update_status.setText(message)
+        self.update_status.style().unpolish(self.update_status)
+        self.update_status.style().polish(self.update_status)
+
+    def set_update_available(self, version: str | None) -> None:
+        """Show or hide the version-labelled install action."""
+
+        if version is None:
+            self.update_install_button.setVisible(False)
+            return
+        self.update_install_button.setText(
+            _("Instalar atualização {version}").format(version=version)
+        )
+        self.update_install_button.setVisible(True)
+
+    def set_update_busy(self, busy: bool) -> None:
+        """Lock the update actions while checking or installing."""
+
+        self.update_check_button.setEnabled(not busy)
+        self.update_install_button.setEnabled(not busy)
 
     def _choose_folder(self, target: QLineEdit) -> None:
         selected = QFileDialog.getExistingDirectory(self, _("Escolher pasta"), target.text())

@@ -3470,3 +3470,204 @@ def test_migration_rollback_survives_a_raising_restore_pending() -> None:
     AppController._restore_migration_rollback(FailingCoordinator(), object())
 
     assert calls == ["pending", "targeted"]
+
+
+def _settings_section_titles(window: object) -> list[str]:
+    from organizador.ui.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+    return [
+        item.text()
+        for item in window.settings_page.findChildren(QLabel)
+        if item.objectName() == "SectionTitle"
+    ]
+
+
+def test_settings_update_section_shows_version_and_wires_buttons(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+) -> None:
+    from organizador import __version__
+    from organizador.ui.main_window import MainWindow
+
+    window = MainWindow(database, app_config)
+    try:
+        page = window.settings_page
+        assert "Atualizações" in _settings_section_titles(window)
+        assert f"Versão instalada: {__version__}" in [
+            item.text() for item in page.findChildren(QLabel)
+        ]
+        checks: list[bool] = []
+        installs: list[bool] = []
+        page.check_updates_requested.connect(lambda: checks.append(True))
+        page.install_update_requested.connect(lambda: installs.append(True))
+
+        assert page.update_check_button.text() == "Procurar atualizações"
+        page.update_check_button.click()
+        assert checks == [True]
+        assert page.update_install_button.isHidden()
+        page.set_update_available("0.6.2")
+        assert not page.update_install_button.isHidden()
+        assert "0.6.2" in page.update_install_button.text()
+        page.update_install_button.click()
+        assert installs == [True]
+        page.set_update_available(None)
+        assert page.update_install_button.isHidden()
+    finally:
+        window.allow_close = True
+        window.close()
+
+
+def test_settings_update_busy_locks_buttons(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+) -> None:
+    from organizador.ui.main_window import MainWindow
+
+    window = MainWindow(database, app_config)
+    window.show()
+    qt_app.processEvents()
+    try:
+        page = window.settings_page
+        page.set_update_available("0.6.2")
+        page.set_update_busy(True)
+        assert not page.update_check_button.isEnabled()
+        assert not page.update_install_button.isEnabled()
+        page.set_update_busy(False)
+        assert page.update_check_button.isEnabled()
+        assert page.update_install_button.isEnabled()
+        page.set_update_available(None)
+        assert page.update_install_button.isHidden()
+    finally:
+        window.allow_close = True
+        window.close()
+
+
+def test_update_check_no_update_mirrors_settings_status(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        _finish_check(
+            controller,
+            updater.UpdateCheckResult(updater.UpdateCheckStatus.NO_UPDATE),
+            False,
+        )
+
+        assert page.update_status.text() == "O SortInator está atualizado."
+        assert not page.update_install_button.isVisible()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_update_check_available_mirrors_settings_status(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        info = _update_info()
+
+        _finish_check(
+            controller,
+            updater.UpdateCheckResult(updater.UpdateCheckStatus.UPDATE_AVAILABLE, update=info),
+            True,
+        )
+        controller.main_window.show_page("definicoes")
+        controller.main_window.show()
+        qt_app.processEvents()
+
+        assert "0.6.2" in page.update_status.text()
+        assert page.update_install_button.isVisible()
+        assert "0.6.2" in page.update_install_button.text()
+        assert not page.update_install_button.isHidden()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_update_check_error_mirrors_settings_status(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        _finish_check(
+            controller,
+            updater.UpdateCheckResult(updater.UpdateCheckStatus.ERROR, error="boom"),
+            False,
+        )
+
+        assert "Não foi possível procurar atualizações." in page.update_status.text()
+        assert page.update_status.objectName() == "ErrorText"
+        assert page.update_install_button.isHidden()
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_update_check_dev_mode_mirrors_settings_status(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        controller._begin_update_check(automatic=False)
+
+        assert page.update_status.text() == "Sem atualizações nesta instalação"
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_update_install_failure_mirrors_settings_status(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        controller._pending_update = _update_info()
+        controller._update_installing = True
+
+        controller._on_update_install_finished("boom")
+
+        assert controller._update_installing is False
+        assert page.update_check_button.isEnabled()
+        assert "boom" in page.update_status.text()
+        assert page.update_status.objectName() == "ErrorText"
+    finally:
+        _close_controller(qt_app, controller)
+
+
+def test_settings_update_signals_reach_controller(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
+    try:
+        page = controller.main_window.settings_page
+        checks: list[bool] = []
+        installs: list[bool] = []
+        monkeypatch.setattr(
+            controller, "_begin_update_check", lambda *, automatic: checks.append(automatic)
+        )
+        monkeypatch.setattr(controller, "_install_pending_update", lambda: installs.append(True))
+
+        page.check_updates_requested.emit()
+        page.install_update_requested.emit()
+
+        assert checks == [False]
+        assert installs == [True]
+    finally:
+        _close_controller(qt_app, controller)
