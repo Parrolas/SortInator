@@ -1303,7 +1303,9 @@ def test_bulk_filing_files_selection_and_keeps_failures_pending(
     )
     with controller.database.connect() as connection:
         filed_count = int(
-            connection.execute("SELECT COUNT(*) FROM events WHERE action = 'file'").fetchone()[0]
+            connection.execute(  # nosemgrep
+                "SELECT COUNT(*) FROM events WHERE action = 'file'"
+            ).fetchone()[0]
         )
     assert filed_count == 2
     assert controller.database.count_inbox_items() == 1
@@ -3034,7 +3036,7 @@ def test_handshake_activation_failure_restores_pending_migration(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     try:
         with controller.database.connect() as connection:
-            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")  # nosemgrep
             connection.commit()
         coordinator = RecoveryCoordinator(app_config.data_dir)
         bundle = coordinator.prepare_migration()
@@ -3084,7 +3086,7 @@ def test_handshake_acknowledges_health_before_closing_data_rollback(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     try:
         with controller.database.connect() as connection:
-            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")  # nosemgrep
             connection.commit()
         coordinator = RecoveryCoordinator(app_config.data_dir)
         bundle = coordinator.prepare_migration()
@@ -3142,7 +3144,7 @@ def test_handshake_validation_failure_skips_ack_and_restores(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     try:
         with controller.database.connect() as connection:
-            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")  # nosemgrep
             connection.commit()
         coordinator = RecoveryCoordinator(app_config.data_dir)
         bundle = coordinator.prepare_migration()
@@ -3212,7 +3214,7 @@ def test_handshake_ack_failure_restores_data_rollback(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     try:
         with controller.database.connect() as connection:
-            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")  # nosemgrep
             connection.commit()
         coordinator = RecoveryCoordinator(app_config.data_dir)
         bundle = coordinator.prepare_migration()
@@ -3283,14 +3285,14 @@ def test_handshake_transient_validation_failure_restores_quarantined_bundle(
     controller, _notices = _watched_controller(qt_app, app_config, monkeypatch)
     try:
         with controller.database.connect() as connection:
-            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")
+            connection.execute("ALTER TABLE tasks DROP COLUMN reminder_lead_days")  # nosemgrep
             connection.commit()
         coordinator = RecoveryCoordinator(app_config.data_dir)
         bundle = coordinator.prepare_migration()
         assert bundle is not None
         controller.database.initialize()
         with controller.database.connect() as connection:
-            connection.execute(
+            connection.execute(  # nosemgrep
                 """
                 INSERT INTO subjects(name, code, folder_name, created_at)
                 VALUES ('After backup', 'NEW', 'After backup', '2026-09-03T00:00:00+00:00')
@@ -3342,7 +3344,9 @@ def test_handshake_transient_validation_failure_restores_quarantined_bundle(
         assert not (bundle.path / QUARANTINED_MARKER).exists()
         with controller.database.connect() as connection:
             new_rows = int(
-                connection.execute("SELECT COUNT(*) FROM subjects WHERE code = 'NEW'").fetchone()[0]
+                connection.execute(  # nosemgrep
+                    "SELECT COUNT(*) FROM subjects WHERE code = 'NEW'"
+                ).fetchone()[0]
             )
         assert new_rows == 0
     finally:

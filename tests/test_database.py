@@ -1239,6 +1239,121 @@ def test_replace_document_pages_reports_a_stale_path_guard(
     assert stored.indexed_at is not None
 
 
+def test_document_write_guards_cover_token_and_stats(
+    database: Database, subject: Subject, tmp_path: Path
+) -> None:
+    file_id = _file_record(database, subject, tmp_path)
+    document = database.get_file(file_id)
+    assert document is not None
+    path = document.current_path
+    token = document.record_token
+    assert token != ""
+    details = path.stat()
+
+    refused = database.replace_document_pages(
+        file_id,
+        subject.name,
+        path.name,
+        ["conteudo recusado"],
+        expected_path=path,
+        expected_record_token="token-errado",
+        size=details.st_size,
+        mtime_ns=details.st_mtime_ns,
+    )
+
+    assert refused is False
+    assert database.search("recusado") == []
+
+    written = database.replace_document_pages(
+        file_id,
+        subject.name,
+        path.name,
+        ["conteudo guardado"],
+        expected_path=path,
+        expected_record_token=token,
+        size=details.st_size,
+        mtime_ns=details.st_mtime_ns,
+    )
+
+    assert written is True
+    assert database.search("guardado")
+
+    # A lone size without mtime keeps both fingerprint columns untouched.
+    database.replace_document_pages(
+        file_id,
+        subject.name,
+        path.name,
+        ["conteudo seguinte"],
+        expected_path=path,
+        size=12345678,
+    )
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT size, mtime_ns FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+    assert row is not None
+    assert row["size"] == details.st_size
+    assert row["mtime_ns"] == details.st_mtime_ns
+
+    # mark_document_indexed refuses a mismatched token...
+    database.mark_document_indexed(
+        file_id,
+        expected_path=path,
+        expected_record_token="token-errado",
+        index_state="failed",
+        index_error="guard",
+    )
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.index_state == ""
+
+    # ...and applies the state for the stored token.
+    database.mark_document_indexed(
+        file_id,
+        expected_path=path,
+        expected_record_token=token,
+        index_state="failed",
+        index_error="guard",
+    )
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.index_state == "failed"
+    assert stored.index_error == "guard"
+
+    # clear_index_state refuses a mismatched token...
+    database.clear_index_state(file_id, expected_path=path, expected_record_token="token-errado")
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.indexed_at is not None
+
+    # ...and clears the fingerprint for the stored token.
+    database.clear_index_state(file_id, expected_path=path, expected_record_token=token)
+    stored = database.get_file(file_id)
+    assert stored is not None
+    assert stored.indexed_at is None
+
+    # refresh_file_size keeps the mtime unless a new one is provided.
+    database.refresh_file_size(file_id, 999, expected_path=path, expected_record_token=token)
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT size, mtime_ns FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+    assert row is not None
+    assert row["size"] == 999
+    assert row["mtime_ns"] == details.st_mtime_ns
+
+    database.refresh_file_size(
+        file_id, 1000, expected_path=path, expected_record_token=token, mtime_ns=42
+    )
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT size, mtime_ns FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+    assert row is not None
+    assert row["size"] == 1000
+    assert row["mtime_ns"] == 42
+
+
 def test_version_rename_lifecycle_updates_the_catalog(
     database: Database, subject: Subject, tmp_path: Path
 ) -> None:
@@ -1373,36 +1488,22 @@ def test_drop_file_record_refused_while_a_version_rename_is_pending(
     assert database.cancel_version_rename(event.id)
 
 
-def test_checked_identifier_rejects_injection_shape() -> None:
-    from organizador.db import _checked_identifier
-
-    assert _checked_identifier("files", kind="table") == "files"
-    for hostile in ("files; DROP TABLE files", 'files"', "files)", "", "1files", "file-id"):
-        with pytest.raises(ValueError):
-            _checked_identifier(hostile, kind="table")
-
-
 def test_pragma_columns_rejects_unknown_table(database: Database) -> None:
     from organizador.db import _pragma_columns
 
     with database.connect() as connection:
         assert "content_sha256" in _pragma_columns(connection, "files")
-        with pytest.raises(ValueError):
-            _pragma_columns(connection, "sqlite_master; --")
+        assert "reminder_lead_days" in _pragma_columns(connection, "tasks")
+        for hostile in ("sqlite_master; --", "files; DROP TABLE subjects", "files)"):
+            with pytest.raises(ValueError):
+                _pragma_columns(connection, hostile)
 
 
-def test_ensure_columns_rejects_unknown_table_and_declaration(database: Database) -> None:
+def test_ensure_columns_rejects_unknown_table(database: Database) -> None:
     from organizador.db import Database as DatabaseClass
 
-    with database.connect() as connection:
-        with pytest.raises(ValueError):
-            DatabaseClass._ensure_columns(
-                connection, "subjects", [("content_sha256", "TEXT NOT NULL DEFAULT ''")]
-            )
-        with pytest.raises(ValueError):
-            DatabaseClass._ensure_columns(
-                connection, "files", [("content_sha256", "INTEGER; DROP TABLE files")]
-            )
+    with database.connect() as connection, pytest.raises(ValueError):
+        DatabaseClass._ensure_columns(connection, "subjects")
 
 
 def test_ensure_columns_adds_missing_hash_columns(tmp_path: Path) -> None:
@@ -1415,16 +1516,12 @@ def test_ensure_columns_adds_missing_hash_columns(tmp_path: Path) -> None:
         connection.row_factory = sqlite3.Row
         connection.execute("CREATE TABLE files (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE inbox (id INTEGER PRIMARY KEY)")
-        DatabaseClass._ensure_columns(
-            connection,
-            "files",
-            [
-                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
-                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
-            ],
-        )
+        DatabaseClass._ensure_columns(connection, "files")
+        DatabaseClass._ensure_columns(connection, "inbox")
         names = {row[1] for row in connection.execute("PRAGMA table_info(files)").fetchall()}
         assert {"content_sha256", "hash_fingerprint"} <= names
+        inbox_names = {row[1] for row in connection.execute("PRAGMA table_info(inbox)").fetchall()}
+        assert {"content_sha256", "hash_fingerprint"} <= inbox_names
 
 
 def test_list_tasks_both_branches(database: Database, subject: Subject) -> None:

@@ -45,9 +45,12 @@ def payload_executable(app_dir: Path) -> Path:
 
 
 def run(executable: Path, *arguments: str, expected: int = 0) -> None:
-    # CI-only harness: fixed argv from the test itself, no shell.
+    # CI-only harness: the installer artifact under test arrives from the
+    # release workflow; no shell is involved.
     result = subprocess.run(  # nosemgrep
-        [str(executable), *arguments], creationflags=subprocess.CREATE_NO_WINDOW, timeout=180
+        [str(executable), *arguments],  # nosemgrep
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        timeout=180,
     )
     if result.returncode != expected:
         raise RuntimeError(f"{executable.name} exited {result.returncode}")

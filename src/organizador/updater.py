@@ -1766,12 +1766,15 @@ def write_swap_script(
 
 
 def _powershell_executable() -> str:
-    system_root = os.environ.get("SYSTEMROOT")
-    if system_root:
-        candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    """Return the system PowerShell 5.1 path, resolved without the environment."""
+
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if length:
+        candidate = Path(buffer.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         if candidate.is_file():
             return str(candidate)
-    return shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe"
+    raise UpdaterError(_("O Windows PowerShell 5.1 não foi encontrado neste sistema."))
 
 
 def _launch_helper(

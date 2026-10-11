@@ -2,6 +2,21 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.19.3 - 2026-10-12
+
+### Changed
+
+- Database statements are fully static or parameterized: schema checks, page
+  replacement, index-state updates, size fingerprints, and search/browse
+  filters no longer build SQL by interpolation, and the identifier guards
+  were removed along with it.
+- The update helper locates Windows PowerShell 5.1 through the system
+  directory instead of the process environment, so updates no longer depend
+  on `SYSTEMROOT` and fail with a clear message when PowerShell is missing.
+- Security-scanner suppressions now cover only documented false positives
+  (record-token parameters and test-only literal SQL), each on the exact
+  flagged line.
+
 ## 0.19.2 - 2026-10-08
 
 ### Added

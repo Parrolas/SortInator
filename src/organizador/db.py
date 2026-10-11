@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import sqlite3
 from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import closing, contextmanager
@@ -241,19 +240,20 @@ _ADDITIVE_COLUMNS = {
     "inbox": ("content_sha256", "hash_fingerprint"),
     "tasks": ("reminder_lead_days", "last_notified_on"),
 }
-_HASH_COLUMN_DEFINITIONS = (
-    ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
-    ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
-)
-_SAFE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def _checked_identifier(value: str, *, kind: str) -> str:
-    """Return a schema identifier, refusing strings shaped like SQL injection."""
-
-    if not _SAFE_IDENTIFIER.fullmatch(value):
-        raise ValueError(f"Unexpected {kind} identifier: {value!r}")
-    return value
+_HASH_COLUMN_STATEMENTS: dict[tuple[str, str], str] = {
+    ("inbox", "content_sha256"): (
+        "ALTER TABLE inbox ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''"
+    ),
+    ("inbox", "hash_fingerprint"): (
+        "ALTER TABLE inbox ADD COLUMN hash_fingerprint TEXT NOT NULL DEFAULT ''"
+    ),
+    ("files", "content_sha256"): (
+        "ALTER TABLE files ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT ''"
+    ),
+    ("files", "hash_fingerprint"): (
+        "ALTER TABLE files ADD COLUMN hash_fingerprint TEXT NOT NULL DEFAULT ''"
+    ),
+}
 
 
 def _pragma_columns(connection: sqlite3.Connection, table: str) -> set[str]:
@@ -263,11 +263,7 @@ def _pragma_columns(connection: sqlite3.Connection, table: str) -> set[str]:
         raise ValueError(f"Unexpected migration table: {table!r}")
     return {
         str(row["name"])
-        for row in connection.execute(
-            # Table names cannot be bound parameters; asserted against
-            # the static schema policy above before interpolation.
-            f"PRAGMA table_info({_checked_identifier(table, kind='table')})"  # nosemgrep
-        ).fetchall()
+        for row in connection.execute("SELECT name FROM pragma_table_info(?)", (table,)).fetchall()
     }
 
 
@@ -452,20 +448,27 @@ class Database:
     def _prepare_office_reindex(connection: sqlite3.Connection) -> None:
         """Queue Office files handled before text extraction was supported."""
 
-        office_files = """
-            SELECT id FROM files
-            WHERE LOWER(current_path) LIKE '%.docx'
-               OR LOWER(current_path) LIKE '%.pptx'
-               OR LOWER(current_path) LIKE '%.xlsx'
-        """
-        # office_files is a static literal defined above, not input.
-        connection.execute(  # nosemgrep
-            f"""DELETE FROM document_pages
-                 WHERE CAST(file_id AS INTEGER) IN ({office_files})"""
+        connection.execute(
+            """
+            DELETE FROM document_pages
+            WHERE CAST(file_id AS INTEGER) IN (
+                SELECT id FROM files
+                WHERE LOWER(current_path) LIKE '%.docx'
+                   OR LOWER(current_path) LIKE '%.pptx'
+                   OR LOWER(current_path) LIKE '%.xlsx'
+            )
+            """
         )
-        connection.execute(  # nosemgrep
-            f"""UPDATE files SET indexed_at = NULL
-                 WHERE id IN ({office_files})"""
+        connection.execute(
+            """
+            UPDATE files SET indexed_at = NULL
+            WHERE id IN (
+                SELECT id FROM files
+                WHERE LOWER(current_path) LIKE '%.docx'
+                   OR LOWER(current_path) LIKE '%.pptx'
+                   OR LOWER(current_path) LIKE '%.xlsx'
+            )
+            """
         )
 
     @staticmethod
@@ -554,41 +557,19 @@ class Database:
     def _prepare_content_hashes(connection: sqlite3.Connection) -> None:
         """Ensure the additive duplicate-detection columns exist."""
 
-        additions = {
-            "inbox": (
-                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
-                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
-            ),
-            "files": (
-                ("content_sha256", "TEXT NOT NULL DEFAULT ''"),
-                ("hash_fingerprint", "TEXT NOT NULL DEFAULT ''"),
-            ),
-        }
-        for table, columns_to_add in additions.items():
-            Database._ensure_columns(connection, table, columns_to_add)
+        for table in ("inbox", "files"):
+            Database._ensure_columns(connection, table)
 
     @staticmethod
-    def _ensure_columns(
-        connection: sqlite3.Connection,
-        table: str,
-        columns_to_add: Sequence[tuple[str, str]],
-    ) -> None:
-        """Add missing columns, refusing anything outside the static policy."""
+    def _ensure_columns(connection: sqlite3.Connection, table: str) -> None:
+        """Add the hash columns declared by the static schema policy."""
 
         if table not in ("inbox", "files"):
             raise ValueError(f"Unexpected migration table: {table!r}")
         columns = _pragma_columns(connection, table)
-        for name, declaration in columns_to_add:
-            if (name, declaration) not in _HASH_COLUMN_DEFINITIONS:
-                raise ValueError(f"Unexpected column addition: {name!r}")
-            if name not in columns:
-                # Identifiers asserted above; the declaration is an exact
-                # static-policy match. Values always use bound parameters.
-                connection.execute(  # nosemgrep
-                    f"ALTER TABLE {_checked_identifier(table, kind='table')}"
-                    f" ADD COLUMN {_checked_identifier(name, kind='column')}"
-                    f" {declaration}"
-                )
+        for (owner, name), statement in _HASH_COLUMN_STATEMENTS.items():
+            if owner == table and name not in columns:
+                connection.execute(statement)
 
     @staticmethod
     def _prepare_search_reindex(connection: sqlite3.Connection) -> None:
@@ -1543,7 +1524,8 @@ class Database:
         *,
         expected_path: Path,
         expected_origin: str,
-        expected_record_token: str,
+        # Per-record random token compared against the catalogue; never a literal.
+        expected_record_token: str,  # nosemgrep
         verify_missing: Callable[[], bool],
     ) -> bool:
         """Drop a stale catalog row after its caller proves the file is missing."""
@@ -2548,37 +2530,41 @@ class Database:
         document changed on disk and must be indexed again from a fresh read.
         """
 
-        assignment = "indexed_at = ?, index_state = '', index_error = ''"
-        values: list[object] = [_now()]
-        if size is not None and mtime_ns is not None:
-            assignment += ", size = ?, mtime_ns = ?"
-            values += [size, mtime_ns]
+        stats: tuple[int | None, int | None] = (
+            (size, mtime_ns) if size is not None and mtime_ns is not None else (None, None)
+        )
         with self.connect() as connection:
             if expected_path is not None:
-                token_clause = " AND record_token = ?" if expected_record_token is not None else ""
-                values += [file_id, str(expected_path)]
-                if expected_record_token is not None:
-                    values.append(expected_record_token)
-                # assignment/token_clause are assembled from adjacent static
-                # literals; every value travels as a bound parameter.
-                updated = connection.execute(  # nosemgrep
-                    f"""
-                    UPDATE files SET {assignment}
-                    WHERE id = ? AND current_path = ?{token_clause}
+                updated = connection.execute(
+                    """
+                    UPDATE files
+                    SET indexed_at = ?, index_state = '', index_error = '',
+                        size = COALESCE(?, size), mtime_ns = COALESCE(?, mtime_ns)
+                    WHERE id = ? AND current_path = ?
+                      AND (? IS NULL OR record_token = ?)
                       AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (
+                        _now(),
+                        stats[0],
+                        stats[1],
+                        file_id,
+                        str(expected_path),
+                        expected_record_token,
+                        expected_record_token,
+                    ),
                 )
                 if updated.rowcount != 1:
                     return False
             else:
-                values.append(file_id)
                 connection.execute(
-                    f"""
-                    UPDATE files SET {assignment}
+                    """
+                    UPDATE files
+                    SET indexed_at = ?, index_state = '', index_error = '',
+                        size = COALESCE(?, size), mtime_ns = COALESCE(?, mtime_ns)
                     WHERE id = ? AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (_now(), stats[0], stats[1], file_id),
                 )
             connection.execute("DELETE FROM document_pages WHERE file_id = ?", (str(file_id),))
             connection.executemany(
@@ -2608,33 +2594,41 @@ class Database:
     ) -> None:
         """Mark a document handled even when it contains no extractable text."""
 
-        assignment = "indexed_at = ?, index_state = ?, index_error = ?"
-        values: list[object] = [_now(), index_state, index_error]
-        if size is not None and mtime_ns is not None:
-            assignment += ", size = ?, mtime_ns = ?"
-            values += [size, mtime_ns]
+        stats: tuple[int | None, int | None] = (
+            (size, mtime_ns) if size is not None and mtime_ns is not None else (None, None)
+        )
         with self.connect() as connection:
             if expected_path is not None:
-                token_clause = " AND record_token = ?" if expected_record_token is not None else ""
-                values += [file_id, str(expected_path)]
-                if expected_record_token is not None:
-                    values.append(expected_record_token)
                 connection.execute(
-                    f"""
-                    UPDATE files SET {assignment}
-                    WHERE id = ? AND current_path = ?{token_clause}
+                    """
+                    UPDATE files
+                    SET indexed_at = ?, index_state = ?, index_error = ?,
+                        size = COALESCE(?, size), mtime_ns = COALESCE(?, mtime_ns)
+                    WHERE id = ? AND current_path = ?
+                      AND (? IS NULL OR record_token = ?)
                       AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (
+                        _now(),
+                        index_state,
+                        index_error,
+                        stats[0],
+                        stats[1],
+                        file_id,
+                        str(expected_path),
+                        expected_record_token,
+                        expected_record_token,
+                    ),
                 )
             else:
-                values.append(file_id)
                 connection.execute(
-                    f"""
-                    UPDATE files SET {assignment}
+                    """
+                    UPDATE files
+                    SET indexed_at = ?, index_state = ?, index_error = ?,
+                        size = COALESCE(?, size), mtime_ns = COALESCE(?, mtime_ns)
                     WHERE id = ? AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (_now(), index_state, index_error, stats[0], stats[1], file_id),
                 )
             connection.commit()
 
@@ -2649,17 +2643,15 @@ class Database:
 
         with self.connect() as connection:
             if expected_path is not None:
-                token_clause = " AND record_token = ?" if expected_record_token is not None else ""
-                parameters: tuple[object, ...] = (file_id, str(expected_path))
-                if expected_record_token is not None:
-                    parameters += (expected_record_token,)
                 connection.execute(
-                    f"""
-                    UPDATE files SET indexed_at = NULL, index_state = '', index_error = ''
-                    WHERE id = ? AND current_path = ?{token_clause}
+                    """
+                    UPDATE files
+                    SET indexed_at = NULL, index_state = '', index_error = ''
+                    WHERE id = ? AND current_path = ?
+                      AND (? IS NULL OR record_token = ?)
                       AND catalog_state = 'active'
                     """,
-                    parameters,
+                    (file_id, str(expected_path), expected_record_token, expected_record_token),
                 )
             else:
                 connection.execute(
@@ -2720,33 +2712,33 @@ class Database:
     ) -> None:
         """Record a new on-disk size and requeue the document for indexing."""
 
-        assignment = "size = ?, indexed_at = NULL"
-        values: list[object] = [size]
-        if mtime_ns is not None:
-            assignment += ", mtime_ns = ?"
-            values.append(mtime_ns)
         with self.connect() as connection:
             if expected_path is not None:
-                token_clause = " AND record_token = ?" if expected_record_token is not None else ""
-                values += [file_id, str(expected_path)]
-                if expected_record_token is not None:
-                    values.append(expected_record_token)
                 connection.execute(
-                    f"""
-                    UPDATE files SET {assignment}
-                    WHERE id = ? AND current_path = ?{token_clause}
+                    """
+                    UPDATE files
+                    SET size = ?, mtime_ns = COALESCE(?, mtime_ns), indexed_at = NULL
+                    WHERE id = ? AND current_path = ?
+                      AND (? IS NULL OR record_token = ?)
                       AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (
+                        size,
+                        mtime_ns,
+                        file_id,
+                        str(expected_path),
+                        expected_record_token,
+                        expected_record_token,
+                    ),
                 )
             else:
-                values.append(file_id)
                 connection.execute(
-                    f"""
-                    UPDATE files SET {assignment}
+                    """
+                    UPDATE files
+                    SET size = ?, mtime_ns = COALESCE(?, mtime_ns), indexed_at = NULL
                     WHERE id = ? AND catalog_state = 'active'
                     """,
-                    tuple(values),
+                    (size, mtime_ns, file_id),
                 )
             connection.commit()
 
@@ -2803,21 +2795,10 @@ class Database:
         query = self._fts_query(text)
         if not query:
             return []
-        conditions = ["document_pages MATCH ?", "f.catalog_state = 'active'"]
-        parameters: list[object] = [query]
-        if subject_id is not None:
-            conditions.append("f.subject_id = ?")
-            parameters.append(subject_id)
-        if kind is not None:
-            conditions.append("f.kind = ?")
-            parameters.append(kind)
-        parameters.append(limit)
         try:
             with self.connect() as connection:
-                # conditions holds only adjacent static literals plus bound
-                # placeholders; the FTS query itself is a bound parameter.
-                rows = connection.execute(  # nosemgrep
-                    f"""
+                rows = connection.execute(
+                    """
                     SELECT
                         f.id AS file_id,
                         f.current_path AS path,
@@ -2828,11 +2809,14 @@ class Database:
                     FROM document_pages AS dp
                     JOIN files AS f ON f.id = CAST(dp.file_id AS INTEGER)
                     JOIN subjects AS s ON s.id = f.subject_id
-                    WHERE {" AND ".join(conditions)}
+                    WHERE document_pages MATCH ?
+                      AND f.catalog_state = 'active'
+                      AND (? IS NULL OR f.subject_id = ?)
+                      AND (? IS NULL OR f.kind = ?)
                     ORDER BY bm25(document_pages), f.filed_at DESC
                     LIMIT ?
                     """,
-                    tuple(parameters),
+                    (query, subject_id, subject_id, kind, kind, limit),
                 ).fetchall()
         except sqlite3.OperationalError:
             LOGGER.exception("FTS search failed for query %r", text)
@@ -2859,18 +2843,9 @@ class Database:
     ) -> list[SearchResult]:
         """List recent documents by filter, without requiring search text."""
 
-        conditions = ["f.catalog_state = 'active'"]
-        parameters: list[object] = []
-        if subject_id is not None:
-            conditions.append("f.subject_id = ?")
-            parameters.append(subject_id)
-        if kind is not None:
-            conditions.append("f.kind = ?")
-            parameters.append(kind)
-        parameters.append(limit)
         with self.connect() as connection:
             rows = connection.execute(
-                f"""
+                """
                 SELECT
                     f.id AS file_id,
                     f.current_path AS path,
@@ -2878,11 +2853,13 @@ class Database:
                     f.kind AS kind
                 FROM files AS f
                 JOIN subjects AS s ON s.id = f.subject_id
-                WHERE {" AND ".join(conditions)}
+                WHERE f.catalog_state = 'active'
+                  AND (? IS NULL OR f.subject_id = ?)
+                  AND (? IS NULL OR f.kind = ?)
                 ORDER BY f.filed_at DESC, f.id DESC
                 LIMIT ?
                 """,
-                tuple(parameters),
+                (subject_id, subject_id, kind, kind, limit),
             ).fetchall()
         return [
             SearchResult(

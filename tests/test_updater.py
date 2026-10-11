@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import os
-import shutil
 import signal
 import stat
 import subprocess
@@ -731,9 +730,22 @@ def test_update_result_preserves_cleanup_deferred(app_dir: Path) -> None:
 def _powershell_path() -> str | None:
     if sys.platform != "win32":
         return None
-    system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
-    candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    return str(candidate) if candidate.is_file() else shutil.which("powershell.exe")
+    try:
+        return updater._powershell_executable()
+    except UpdaterError:
+        return None
+
+
+def test_powershell_executable_ignores_the_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows PowerShell is required for the helper integration tests")
+    resolved = updater._powershell_executable()
+    assert resolved.casefold().endswith("powershell.exe")
+
+    monkeypatch.setenv("SYSTEMROOT", r"C:\definitely-not-the-system-root")
+    assert updater._powershell_executable() == resolved
 
 
 @pytest.fixture(scope="session")

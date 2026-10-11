@@ -934,6 +934,7 @@ EN_STRINGS: dict[str, str] = {
     "Versão instalada: {version}": "Installed version: {version}",
     "Procurar atualizações": "Check for updates",
     "SortInator {version} está disponível.": "SortInator {version} is available.",
+    "O Windows PowerShell 5.1 não foi encontrado neste sistema.": "Windows PowerShell 5.1 was not found on this system.",
 }
 
 ES_STRINGS: dict[str, str] = {
@@ -1903,6 +1904,7 @@ ES_STRINGS: dict[str, str] = {
     "Versão instalada: {version}": "Versión instalada: {version}",
     "Procurar atualizações": "Buscar actualizaciones",
     "SortInator {version} está disponível.": "SortInator {version} está disponible.",
+    "O Windows PowerShell 5.1 não foi encontrado neste sistema.": "No se pudo encontrar Windows PowerShell 5.1 en este sistema.",
 }
 
 FR_STRINGS: dict[str, str] = {
@@ -2887,4 +2889,5 @@ FR_STRINGS: dict[str, str] = {
     "Versão instalada: {version}": "Version installée : {version}",
     "Procurar atualizações": "Rechercher des mises à jour",
     "SortInator {version} está disponível.": "SortInator {version} est disponible.",
+    "O Windows PowerShell 5.1 não foi encontrado neste sistema.": "Impossible de trouver Windows PowerShell 5.1 sur ce système.",
 }
