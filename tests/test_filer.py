@@ -14,7 +14,7 @@ from organizador.config import AppConfig
 from organizador.db import Database
 from organizador.filer import FilingError, FilingService, render_final_name
 from organizador.models import ExistingDownload, FilingHint, HistoryEvent, Subject
-from organizador.paths import IncompleteMoveError
+from organizador.paths import IncompleteMoveError, create_subdirectory, move_without_overwrite
 
 
 def _download(config: AppConfig, name: str = "MAT101_ficha.pdf", size: int = 200) -> Path:
@@ -44,6 +44,84 @@ def test_ingest_and_file_document_are_collision_safe(
     assert database.count_inbox_items() == 0
     assert database.filing_hints() == [FilingHint("MAT101_ficha.pdf", subject.id, "Exercícios")]
     assert database.activity_summary().collisions_renamed == 1
+
+
+def test_file_in_existing_nested_folder_and_undo(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    subfolder = ("Projeto Final", "Rascunhos")
+    folder = app_config.university_root.joinpath(subject.folder_name, "Trabalhos", *subfolder)
+    folder.mkdir(parents=True)
+    existing = folder / "Ficha.pdf"
+    existing.write_bytes(b"existing")
+    item = filer.ingest(_download(app_config))
+    assert item is not None
+
+    document = filer.file_document(
+        item.id, subject.id, "Trabalhos", "Ficha.pdf", subfolder=subfolder
+    )
+
+    assert document.current_path == folder / "Ficha (2).pdf"
+    assert document.current_path.read_bytes() == b"x" * 200
+    assert document.kind == "Trabalhos"
+    assert database.browse_documents(subject_id=subject.id, kind="Trabalhos")[0].path == (
+        document.current_path
+    )
+    event = database.latest_undoable_filing()
+    assert event is not None and event.destination_path == document.current_path
+    restored = filer.undo_latest_filing()
+    assert restored is not None and restored.path.read_bytes() == b"x" * 200
+    assert not document.current_path.exists()
+    assert existing.read_bytes() == b"existing"
+
+
+@pytest.mark.parametrize("subfolder", [("Não existe",), ("..", "Testes"), (r"..\Testes",)])
+def test_filing_refuses_unavailable_or_invalid_subfolder(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+    subfolder: tuple[str, ...],
+) -> None:
+    item = filer.ingest(_download(app_config))
+    assert item is not None
+
+    with pytest.raises(FilingError, match="subpasta já não está disponível"):
+        filer.file_document(item.id, subject.id, "Slides", "Ficha.pdf", subfolder=subfolder)
+
+    assert item.path.is_file()
+    assert database.count_inbox_items() == 1
+    assert database.browse_documents() == []
+    assert database.list_pending_filings() == []
+    root = app_config.university_root / subject.folder_name
+    assert list((root / "Slides").iterdir()) == []
+    assert list((root / "Testes").iterdir()) == []
+
+
+def test_filing_does_not_recreate_subfolder_removed_during_filing(
+    app_config: AppConfig,
+    database: Database,
+    filer: FilingService,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = app_config.university_root / subject.folder_name / "Slides" / "Projeto"
+    folder.mkdir()
+    item = filer.ingest(_download(app_config))
+    assert item is not None
+
+    def remove_then_move(source: Path, target: Path, *, create_parent: bool = True) -> Path:
+        folder.rmdir()
+        return move_without_overwrite(source, target, create_parent=create_parent)
+
+    monkeypatch.setattr("organizador.filer.move_without_overwrite", remove_then_move)
+    with pytest.raises(FilingError, match="subpasta já não está disponível"):
+        filer.file_document(item.id, subject.id, "Slides", "Ficha.pdf", subfolder=("Projeto",))
+
+    assert not folder.exists()
+    assert item.path.read_bytes() == b"x" * 200
+    assert database.count_inbox_items() == 1
+    assert database.list_pending_filings() == []
 
 
 def test_filing_survives_a_catalog_read_failure(
@@ -604,6 +682,36 @@ def _make_junction(link: Path, target: Path) -> bool:
     return completed.returncode == 0 and link.is_dir()
 
 
+def test_filing_rejects_junction_inside_the_subject_type_folder(
+    app_config: AppConfig, filer: FilingService, subject: Subject, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    link = app_config.university_root / subject.folder_name / "Slides" / "Projeto"
+    if not _make_junction(link, outside):
+        pytest.skip("directory junctions are not available on this filesystem")
+    item = filer.ingest(_download(app_config))
+    assert item is not None
+
+    with pytest.raises(FilingError, match="subpasta já não está disponível"):
+        filer.file_document(item.id, subject.id, "Slides", "Ficha.pdf", subfolder=("Projeto",))
+
+    assert item.path.is_file()
+    assert list(outside.iterdir()) == []
+
+
+def test_create_subdirectory_refuses_a_parent_junction(tmp_path: Path) -> None:
+    root = tmp_path / "Universidade"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    if not _make_junction(root / "Projeto", outside):
+        pytest.skip("directory junctions are not available on this filesystem")
+
+    with pytest.raises(NotADirectoryError):
+        create_subdirectory(root, ("Projeto",), "Rascunhos")
+
+    assert list(outside.iterdir()) == []
+
+
 def test_filing_rejects_subject_folder_that_escapes_through_a_junction(
     app_config: AppConfig,
     database: Database,
@@ -663,6 +771,40 @@ def test_replace_previous_version_round_trip(
     assert stored_old.current_path == destination
     assert destination.read_bytes() == old_bytes
     assert not versioned.exists()
+
+
+def test_replacement_keeps_previous_version_in_its_original_subfolder(
+    app_config: AppConfig, database: Database, filer: FilingService, subject: Subject
+) -> None:
+    base = app_config.university_root / subject.folder_name / "Slides"
+    (base / "Original").mkdir()
+    (base / "Destino").mkdir()
+    item = filer.ingest(_download(app_config, "aula.pdf"))
+    assert item is not None
+    old = filer.file_document(item.id, subject.id, "Slides", "Aula.pdf", subfolder=("Original",))
+
+    new_item = filer.ingest(_download(app_config, "aula.pdf", size=300))
+    assert new_item is not None
+    new = filer.file_document(
+        new_item.id,
+        subject.id,
+        "Slides",
+        "Aula.pdf",
+        replace_document_id=old.id,
+        subfolder=("Destino",),
+    )
+
+    versioned = base / "Original" / "Aula (versão anterior).pdf"
+    assert versioned.read_bytes() == b"x" * 200
+    assert new.current_path == base / "Destino" / "Aula.pdf"
+    assert not old.current_path.exists()
+
+    restored = filer.undo_latest_filing()
+    assert restored is not None and restored.path.read_bytes() == b"x" * 300
+    assert old.current_path.read_bytes() == b"x" * 200
+    assert not versioned.exists()
+    stored = database.get_file(old.id)
+    assert stored is not None and stored.current_path == old.current_path
 
 
 def test_replacement_uses_a_free_versioned_name(

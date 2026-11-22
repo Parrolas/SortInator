@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QDate, QTimer
+from PySide6.QtCore import QDate, QPoint, QRect, QTimer
 from PySide6.QtGui import QCursor, QFont, QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -52,8 +52,8 @@ from organizador.ui.dialogs import (
 )
 from organizador.ui.main_window import MainWindow
 from organizador.ui.pages import SettingsPage, SettingsPayload
-from organizador.ui.prompt import FilingPrompt
-from organizador.ui.theme import apply_theme, get_theme
+from organizador.ui.prompt import FilingPrompt, _SubfolderPicker
+from organizador.ui.theme import apply_theme, build_stylesheet, get_theme
 from organizador.ui.tray import TrayIcon
 from organizador.ui.widgets import EmptyState
 
@@ -610,6 +610,85 @@ def test_filing_prompt_regenerates_name_on_subject_and_type_change(
         prompt.type_buttons["Trabalhos"].click()
         qt_app.processEvents()
         assert prompt.name_edit.text() == "o meu nome.pdf"
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+
+
+@pytest.mark.parametrize("size", [(740, 960), (640, 430), (424, 460)])
+def test_filing_prompt_keeps_actions_on_screen_when_duplicate_arrives(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    database: Database,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+    size: tuple[int, int],
+) -> None:
+    area = QRect(-1500, 50, *size)
+    monkeypatch.setattr(FilingPrompt, "_work_area", lambda self, **kwargs: area)
+    name = "MAT101_slides.pdf"
+    inbox_path = app_config.inbox_dir / name
+    inbox_path.write_bytes(b"duplicate")
+    item = database.add_inbox_item(inbox_path, app_config.downloads_dir / name, name, 9)
+    nested = (
+        app_config.university_root
+        / subject.folder_name
+        / "Slides"
+        / ("Projeto de testes com um caminho comprido " * 2)
+    )
+    duplicate = FiledDocument(
+        id=1,
+        subject_id=subject.id,
+        kind="Slides",
+        original_name=name,
+        current_path=nested / ("Planeamento do projeto " * 6 + ".pdf"),
+        original_path=item.original_path,
+        size=item.size,
+        filed_at=item.detected_at,
+        indexed_at=None,
+    )
+    subjects = [subject] + [
+        dataclasses.replace(subject, id=subject.id + i, name=f"Disciplina {i}") for i in range(1, 5)
+    ]
+    prompt = FilingPrompt()
+    prompt.setStyleSheet(build_stylesheet(get_theme(app_config.theme)))
+    try:
+        prompt.show_item(
+            item,
+            subjects,
+            guess_filing(item.original_name, [subject]),
+            university_root=app_config.university_root,
+        )
+        qt_app.processEvents()
+        before = prompt.height()
+        assert area.contains(QRect(prompt.animation.startValue(), prompt.size()))
+        assert area.contains(QRect(prompt.animation.endValue(), prompt.size()))
+
+        prompt.set_duplicate(duplicate)
+        qt_app.processEvents()
+        assert prompt.duplicate_banner.isVisible()
+        assert area.contains(prompt.geometry())
+        button_rect = QRect(
+            prompt.confirm_button.mapToGlobal(QPoint(0, 0)), prompt.confirm_button.size()
+        )
+        assert area.contains(button_rect)
+        assert prompt.geometry().contains(button_rect)
+        assert not prompt.body_scroll.isAncestorOf(prompt.confirm_button)
+        scrollbar = prompt.body_scroll.verticalScrollBar()
+        if size[1] < 500:
+            assert scrollbar.maximum() > 0
+            scrollbar.setValue(scrollbar.maximum())
+            assert prompt.confirm_button.mapToGlobal(QPoint(0, 0)) == button_rect.topLeft()
+        else:
+            assert scrollbar.maximum() == 0
+            assert prompt.height() > before
+            prompt.set_duplicate(None)
+            qt_app.processEvents()
+            assert prompt.height() == before
+
+        prompt.show_error("Não foi possível organizar o ficheiro de teste. " * 8)
+        qt_app.processEvents()
+        assert area.contains(prompt.geometry())
     finally:
         prompt.timer.stop()
         prompt.hide()
@@ -1322,6 +1401,117 @@ def test_bulk_filing_files_selection_and_keeps_failures_pending(
     controller.tray.hide()
     controller.main_window.allow_close = True
     controller.main_window.close()
+
+
+def test_filing_prompt_browses_and_files_to_an_existing_nested_destination(
+    qt_app: QApplication,
+    app_config: AppConfig,
+    subject: Subject,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, notices = _watched_controller(qt_app, app_config, monkeypatch)
+    prompt = controller.prompt
+    try:
+        base = app_config.university_root / subject.folder_name / "Trabalhos"
+        nested = base / "Projeto Final" / "Rascunhos"
+        nested.mkdir(parents=True)
+        (base / "Não é uma pasta.pdf").write_bytes(b"already there")
+        inbox_path = app_config.inbox_dir / "MAT101_trabalho.pdf"
+        inbox_path.write_bytes(b"coursework")
+        item = controller.database.add_inbox_item(
+            inbox_path, app_config.downloads_dir / inbox_path.name, inbox_path.name, 10
+        )
+        prompt.set_timeout(30, auto_close=True)
+        controller.prompt_queue.append(item.id)
+        controller._show_next_prompt()
+        prompt.subject_group.button(subject.id).click()
+        prompt.type_buttons["Trabalhos"].click()
+
+        def choose_nested(picker: _SubfolderPicker) -> int:
+            assert not prompt.timer.isActive()
+            assert picker.folders.count() == 1
+            assert picker.folders.item(0).text() == "Projeto Final"
+            assert not picker.back_button.isEnabled()
+            picker.folders.setCurrentRow(0)
+            picker.open_button.click()
+            assert picker.folders.item(0).text() == "Rascunhos"
+            picker.folders.setCurrentRow(0)
+            picker.open_button.click()
+            assert picker.folders.count() == 0
+            picker.back_button.click()
+            picker.folders.setCurrentRow(0)
+            picker.open_button.click()
+            picker.use_button.click()
+            return picker.result()
+
+        monkeypatch.setattr(_SubfolderPicker, "exec", choose_nested)
+        prompt.subfolder_button.click()
+        assert prompt.timer.isActive()
+        assert "Projeto Final → Rascunhos" in prompt.destination_label.toolTip()
+
+        def cancel_at_current_folder(picker: _SubfolderPicker) -> int:
+            assert picker.subfolder == ("Projeto Final", "Rascunhos")
+            picker.back_button.click()
+            return QDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(_SubfolderPicker, "exec", cancel_at_current_folder)
+        prompt.subfolder_button.click()
+        assert "Projeto Final → Rascunhos" in prompt.destination_label.toolTip()
+        prompt.type_buttons["Testes"].click()
+        assert prompt.destination_label.toolTip() == f"Destino: {subject.name} → Testes"
+        prompt.type_buttons["Trabalhos"].click()
+        assert prompt.destination_label.toolTip() == f"Destino: {subject.name} → Trabalhos"
+
+        monkeypatch.setattr(_SubfolderPicker, "exec", choose_nested)
+        prompt.subfolder_button.click()
+        nested.rmdir()
+        prompt.confirm_button.click()
+        _pump_until(qt_app, lambda: "subpasta já não está disponível" in prompt.error_label.text())
+        assert prompt.current_item_id == item.id
+        assert inbox_path.read_bytes() == b"coursework"
+        assert not nested.exists()
+
+        def create_nested(picker: _SubfolderPicker) -> int:
+            picker.new_folder_button.click()
+            assert not picker.folder_editor.isHidden()
+            picker.folder_name_edit.setText("Projeto Final")
+            picker.create_folder_button.click()
+            assert "já existe" in picker.status.text().casefold()
+            assert picker.subfolder == ()
+
+            picker.folders.setCurrentRow(0)
+            picker.open_button.click()
+            assert picker.folder_editor.isHidden()
+            picker.new_folder_button.click()
+            picker.folder_name_edit.setText("../Fora")
+            picker.create_folder_button.click()
+            assert "nome de pasta válido" in picker.status.text()
+            assert picker.subfolder == ("Projeto Final",)
+            assert not (base / "Fora").exists()
+
+            picker.folder_name_edit.setText("Rascunhos")
+            picker.folder_name_edit.returnPressed.emit()
+            assert nested.is_dir()
+            assert picker.location.toolTip().endswith("Projeto Final → Rascunhos")
+            assert picker.folder_editor.isHidden()
+            picker.use_button.click()
+            return picker.result()
+
+        monkeypatch.setattr(_SubfolderPicker, "exec", create_nested)
+        prompt.subject_group.button(subject.id).click()
+        prompt.type_buttons["Trabalhos"].click()
+        prompt.subfolder_button.click()
+        prompt.name_edit.setText("Trabalho.pdf")
+        prompt.confirm_button.click()
+        _pump_until(qt_app, lambda: any(args[0] == "Ficheiro organizado" for args, _ in notices))
+
+        assert (nested / "Trabalho.pdf").read_bytes() == b"coursework"
+        results = controller.database.browse_documents(subject_id=subject.id, kind="Trabalhos")
+        assert [result.path for result in results] == [nested / "Trabalho.pdf"]
+    finally:
+        prompt.timer.stop()
+        prompt.hide()
+        _close_controller(qt_app, controller)
 
 
 def test_filing_runs_off_the_gui_thread(

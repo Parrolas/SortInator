@@ -202,6 +202,24 @@ EN_STRINGS: dict[str, str] = {
     "Escolhe uma opção": "Choose an option",
     "Escolhe uma pasta para a Universidade.": "Choose a folder for the University.",
     "Escolher pasta": "Choose folder",
+    "Escolher subpasta…": "Choose subfolder…",
+    "Nova pasta…": "New folder…",
+    "Nome da pasta": "Folder name",
+    "Criar pasta": "Create folder",
+    "Escolhe um nome de pasta válido.": "Choose a valid folder name.",
+    "Já existe um ficheiro ou uma pasta com este nome.": (
+        "A file or folder with this name already exists."
+    ),
+    "Não foi possível criar a pasta.": "Could not create the folder.",
+    "Subpastas": "Subfolders",
+    "Pasta acima": "Parent folder",
+    "Usar esta pasta": "Use this folder",
+    "Não foi possível abrir esta pasta.": "Could not open this folder.",
+    "Esta pasta não tem subpastas.": "This folder has no subfolders.",
+    "Destino: {path}": "Destination: {path}",
+    "A subpasta já não está disponível. Escolhe outra pasta.": (
+        "The subfolder is no longer available. Choose another folder."
+    ),
     "Escolher pasta Universidade": "Choose University folder",
     "Escolher…": "Browse…",
     "Escreve o nome da disciplina para continuar.": "Type the subject name to continue.",
@@ -1137,6 +1155,24 @@ ES_STRINGS: dict[str, str] = {
     "Escolhe uma opção": "Elige una opción",
     "Escolhe uma pasta para a Universidade.": "Elige una carpeta para la Universidad.",
     "Escolher pasta": "Elegir carpeta",
+    "Escolher subpasta…": "Elegir subcarpeta…",
+    "Nova pasta…": "Nueva carpeta…",
+    "Nome da pasta": "Nombre de la carpeta",
+    "Criar pasta": "Crear carpeta",
+    "Escolhe um nome de pasta válido.": "Elige un nombre de carpeta válido.",
+    "Já existe um ficheiro ou uma pasta com este nome.": (
+        "Ya existe un archivo o una carpeta con este nombre."
+    ),
+    "Não foi possível criar a pasta.": "No se pudo crear la carpeta.",
+    "Subpastas": "Subcarpetas",
+    "Pasta acima": "Carpeta superior",
+    "Usar esta pasta": "Usar esta carpeta",
+    "Não foi possível abrir esta pasta.": "No se pudo abrir esta carpeta.",
+    "Esta pasta não tem subpastas.": "Esta carpeta no tiene subcarpetas.",
+    "Destino: {path}": "Destino de archivo: {path}",
+    "A subpasta já não está disponível. Escolhe outra pasta.": (
+        "La subcarpeta ya no está disponible. Elige otra carpeta."
+    ),
     "Escolher pasta Universidade": "Elegir carpeta Universidad",
     "Escolher…": "Examinar…",
     "Escreve o nome da disciplina para continuar.": "Escribe el nombre de la asignatura para continuar.",
@@ -2107,6 +2143,24 @@ FR_STRINGS: dict[str, str] = {
     "Escolhe uma opção": "Choisis une option",
     "Escolhe uma pasta para a Universidade.": "Choisis un dossier pour l'Université.",
     "Escolher pasta": "Choisir un dossier",
+    "Escolher subpasta…": "Choisir un sous-dossier…",
+    "Nova pasta…": "Nouveau dossier…",
+    "Nome da pasta": "Nom du dossier",
+    "Criar pasta": "Créer un dossier",
+    "Escolhe um nome de pasta válido.": "Choisis un nom de dossier valide.",
+    "Já existe um ficheiro ou uma pasta com este nome.": (
+        "Un fichier ou un dossier porte déjà ce nom."
+    ),
+    "Não foi possível criar a pasta.": "Impossible de créer le dossier.",
+    "Subpastas": "Sous-dossiers",
+    "Pasta acima": "Dossier parent",
+    "Usar esta pasta": "Utiliser ce dossier",
+    "Não foi possível abrir esta pasta.": "Impossible d'ouvrir ce dossier.",
+    "Esta pasta não tem subpastas.": "Ce dossier ne contient aucun sous-dossier.",
+    "Destino: {path}": "Destination : {path}",
+    "A subpasta já não está disponível. Escolhe outra pasta.": (
+        "Le sous-dossier n'est plus disponible. Choisis un autre dossier."
+    ),
     "Escolher pasta Universidade": "Choisir le dossier Université",
     "Escolher…": "Parcourir…",
     "Escreve o nome da disciplina para continuar.": "Tape le nom de la matière pour continuer.",

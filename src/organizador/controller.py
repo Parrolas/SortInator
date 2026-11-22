@@ -128,6 +128,7 @@ class _FileJob:
     create_task: bool
     due_date: date | None
     replace_document_id: int | None = None
+    subfolder: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1408,6 +1409,7 @@ class AppController(QObject):
                 subjects,
                 guess,
                 name_template=self.config.filename_template,
+                university_root=self.config.university_root,
             )
             self._lookup_duplicate(candidate)
             return
@@ -1441,6 +1443,7 @@ class AppController(QObject):
         create_task: bool,
         due_date: date | None,
         replace_document_id: int | None = None,
+        subfolder: tuple[str, ...] = (),
     ) -> None:
         job = _FileJob(
             inbox_id,
@@ -1450,6 +1453,7 @@ class AppController(QObject):
             create_task,
             due_date,
             replace_document_id,
+            subfolder,
         )
         if self._update_installing or self._shutting_down:
             return
@@ -1462,6 +1466,7 @@ class AppController(QObject):
                 kind,
                 filename,
                 replace_document_id=replace_document_id,
+                subfolder=subfolder,
             ),
         ):
             self.prompt_queue.appendleft(inbox_id)
@@ -1492,7 +1497,7 @@ class AppController(QObject):
         subject = self.database.get_subject(job.subject_id)
         self._notify_filed(
             document.current_path.name,
-            f"{subject.name if subject else job.kind} / {job.kind}",
+            " / ".join((subject.name if subject else job.kind, job.kind, *job.subfolder)),
             document,
         )
         self._refresh()

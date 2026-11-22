@@ -396,17 +396,21 @@ def test_legacy_interrupted_undo_reuses_the_original_inbox_record(
     assert database.count_inbox_items() == 1
 
 
+@pytest.mark.parametrize("subfolder", [(), ("Projeto", "Rascunhos")])
 def test_prepared_filing_is_completed_after_a_post_move_crash(
     app_config: AppConfig,
     database: Database,
     filer: FilingService,
     subject: Subject,
+    subfolder: tuple[str, ...],
 ) -> None:
     source = app_config.downloads_dir / "arquivo-interrompido.pdf"
     source.write_bytes(b"pending filing" * 20)
     item = filer.ingest(source)
     assert item is not None
-    destination = app_config.university_root / subject.folder_name / "Slides" / source.name
+    folder = app_config.university_root.joinpath(subject.folder_name, "Slides", *subfolder)
+    folder.mkdir(parents=True, exist_ok=True)
+    destination = folder / source.name
     pending = database.begin_document_filing(item.id, subject.id, "Slides", destination)
     item.path.replace(destination)
     before = _snapshot(app_config.university_root)

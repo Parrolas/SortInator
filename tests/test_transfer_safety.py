@@ -75,12 +75,20 @@ def test_fifo_queue_rejects_conflicting_file_return_undo_and_bulk(
         kind: str,
         name: str,
         replace_document_id: int | None = None,
+        subfolder: tuple[str, ...] = (),
     ) -> object:
         calls.append(item)
         if item == first:
             started.set()
             assert release.wait(10)
-        return real(item, subject_id, kind, name, replace_document_id=replace_document_id)
+        return real(
+            item,
+            subject_id,
+            kind,
+            name,
+            replace_document_id=replace_document_id,
+            subfolder=subfolder,
+        )
 
     monkeypatch.setattr(controller.filer, "file_document", slow)
     try:

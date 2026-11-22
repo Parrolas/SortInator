@@ -15,6 +15,7 @@ import organizador.paths as path_operations
 from organizador.classifier import extract_due_date, guess_filing, normalise
 from organizador.models import ExistingDownload, FilingHint, Subject
 from organizador.paths import (
+    create_subdirectory,
     move_without_overwrite,
     resolve_contained,
     sanitise_component,
@@ -36,6 +37,25 @@ def test_windows_components_remove_invalid_and_reserved_names() -> None:
     assert sanitise_component("  aula: 3 / revisão?  ") == "aula- 3 - revisão-"
     assert sanitise_component("CON") == "CON_"
     assert sanitise_filename(r"..\segredo?.pdf") == "segredo-.pdf"
+
+
+@pytest.mark.parametrize("name", ["", "..", "A/B", r"A\B", "C:Projeto", "NUL.txt", "Projeto. "])
+def test_create_subdirectory_rejects_invalid_names(tmp_path: Path, name: str) -> None:
+    parent = tmp_path / "Projetos"
+    parent.mkdir()
+    with pytest.raises(ValueError, match="Invalid folder name"):
+        create_subdirectory(tmp_path, ("Projetos",), name)
+
+    assert list(parent.iterdir()) == []
+    assert list(tmp_path.iterdir()) == [parent]
+
+
+def test_create_subdirectory_does_not_rebuild_a_missing_parent(tmp_path: Path) -> None:
+    parent = tmp_path / "Projetos"
+    with pytest.raises(FileNotFoundError):
+        create_subdirectory(tmp_path, ("Projetos",), "Trabalho")
+
+    assert not parent.exists()
 
 
 def test_unique_path_adds_a_human_readable_counter(tmp_path: Path) -> None:

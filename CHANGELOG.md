@@ -2,6 +2,21 @@
 
 All notable changes to SortInator are recorded here.
 
+## 0.20.0 - 2026-11-22
+
+### Added
+
+- The filing pop-up now lets you browse nested folders under the selected subject
+  and document type, create a folder, and preview the destination before filing.
+- If the selected folder disappears before filing, SortInator keeps the file
+  in the Inbox and asks you to choose again.
+
+### Fixed
+
+- The filing pop-up stays inside the current monitor when a duplicate warning
+  appears. On shorter screens, the form scrolls while the action buttons remain
+  visible.
+
 ## 0.19.3 - 2026-10-12
 
 ### Changed

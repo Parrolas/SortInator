@@ -26,6 +26,7 @@ from organizador.models import (
 )
 from organizador.paths import (
     IncompleteMoveError,
+    existing_subdirectory,
     is_direct_child,
     move_without_overwrite,
     resolve_contained,
@@ -98,6 +99,10 @@ def render_final_name(
 
 class FilingError(RuntimeError):
     """A recoverable file-operation failure suitable for display to the user."""
+
+
+def _unavailable_subfolder() -> FilingError:
+    return FilingError(_("A subpasta já não está disponível. Escolhe outra pasta."))
 
 
 class FilingService:
@@ -237,6 +242,7 @@ class FilingService:
         requested_name: str,
         *,
         replace_document_id: int | None = None,
+        subfolder: tuple[str, ...] = (),
     ) -> FiledDocument:
         """Move an inbox document to a subject/type folder."""
 
@@ -255,13 +261,21 @@ class FilingService:
             )
 
         filename = self._name_with_original_extension(requested_name, item.original_name)
-        folder = self.config.university_root / subject.folder_name / kind
-        version_event = self._replace_previous_version(
-            folder, replace_document_id, subject_id, kind
-        )
-        destination, collided = self._plan_contained_destination(
-            folder, filename, self.config.university_root
-        )
+        root = self.config.university_root
+        base_parts = (subject.folder_name, kind)
+        base = root.joinpath(*base_parts)
+        folder = base
+        if subfolder:
+            try:
+                folder = existing_subdirectory(root, base_parts + subfolder)
+            except OSError as exc:
+                raise _unavailable_subfolder() from exc
+        version_event = self._replace_previous_version(base, replace_document_id, subject_id, kind)
+        try:
+            destination, collided = self._plan_contained_destination(folder, filename, root)
+        except FilingError:
+            self._revert_version_rename(version_event)
+            raise
         try:
             pending = self.database.begin_document_filing(
                 inbox_id,
@@ -274,7 +288,11 @@ class FilingService:
             self._revert_version_rename(version_event)
             raise FilingError(_("Não foi possível preparar o histórico da organização.")) from exc
         try:
-            move_without_overwrite(item.path, destination)
+            if subfolder:
+                existing_subdirectory(root, base_parts + subfolder)
+                move_without_overwrite(item.path, destination, create_parent=False)
+            else:
+                move_without_overwrite(item.path, destination)
         except IncompleteMoveError as exc:
             self._revert_version_rename(version_event)
             raise FilingError(
@@ -291,6 +309,11 @@ class FilingService:
             except Exception:
                 LOGGER.exception("Failed to cancel a prepared filing")
             self._revert_version_rename(version_event)
+            if subfolder:
+                try:
+                    existing_subdirectory(root, base_parts + subfolder)
+                except OSError:
+                    raise _unavailable_subfolder() from exc
             raise FilingError(
                 _(
                     "O ficheiro ainda está a ser usado por outra aplicação. "
@@ -342,7 +365,7 @@ class FilingService:
         if event is None:
             return
         try:
-            move_without_overwrite(event.destination_path, event.source_path)
+            move_without_overwrite(event.destination_path, event.source_path, create_parent=False)
         except Exception:
             LOGGER.exception("Could not restore the previous version after a failed filing")
             return
@@ -358,7 +381,7 @@ class FilingService:
 
     def _replace_previous_version(
         self,
-        folder: Path,
+        base: Path,
         replace_document_id: int | None,
         subject_id: int,
         kind: str,
@@ -380,12 +403,19 @@ class FilingService:
         if existing.subject_id != subject_id or existing.kind != kind:
             return None
         try:
+            folder = existing.current_path.parent
+            relative = folder.relative_to(base)
+            if relative.parts:
+                existing_subdirectory(
+                    self.config.university_root,
+                    folder.relative_to(self.config.university_root).parts,
+                )
             versioned, _ = self._plan_contained_destination(
                 folder,
                 self._previous_version_name(existing.current_path.name),
                 self.config.university_root,
             )
-        except FilingError:
+        except (FilingError, OSError, ValueError):
             return None
         try:
             event = self.database.begin_version_rename(existing.id, versioned)
@@ -393,7 +423,7 @@ class FilingService:
             LOGGER.exception("Could not prepare the previous-version rename")
             return None
         try:
-            move_without_overwrite(existing.current_path, versioned)
+            move_without_overwrite(existing.current_path, versioned, create_parent=False)
         except OSError:
             LOGGER.exception("Could not rename the previous version")
             with suppress(Exception):
@@ -404,7 +434,7 @@ class FilingService:
         except Exception:
             LOGGER.exception("Could not finalize the previous-version rename")
             with suppress(OSError):
-                move_without_overwrite(versioned, existing.current_path)
+                move_without_overwrite(versioned, existing.current_path, create_parent=False)
             return None
         return event
 

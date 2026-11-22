@@ -10,7 +10,7 @@ import shutil
 import unicodedata
 from ctypes import wintypes
 from pathlib import Path
-from stat import S_ISREG
+from stat import FILE_ATTRIBUTE_REPARSE_POINT, S_ISDIR, S_ISREG
 from typing import Any
 
 from organizador.i18n import _
@@ -138,10 +138,12 @@ def move_without_overwrite(
     target: Path,
     *,
     expected_identity: FileIdentity | None = None,
+    create_parent: bool = True,
 ) -> Path:
     """Move one regular file while atomically refusing an existing destination."""
 
-    target.parent.mkdir(parents=True, exist_ok=True)
+    if create_parent:
+        target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() or target.is_symlink():
         raise FileExistsError(target)
     if os.name == "nt":
@@ -504,6 +506,44 @@ def is_direct_child(path: Path, directory: Path) -> bool:
         return path.resolve().parent == directory.resolve()
     except OSError:
         return False
+
+
+def _valid_folder_component(name: str) -> bool:
+    return bool(
+        name
+        and not name.endswith((" ", "."))
+        and not INVALID_WINDOWS_CHARS.search(name)
+        and name.partition(".")[0].rstrip(" ").upper() not in RESERVED_WINDOWS_NAMES
+    )
+
+
+def existing_subdirectory(root: Path, parts: tuple[str, ...]) -> Path:
+    """Check each directory below the configured root without following links."""
+
+    if not root.is_dir():
+        raise NotADirectoryError(root)
+    directory = root
+    for part in parts:
+        if not _valid_folder_component(part):
+            raise OSError(f"Invalid folder component: {part!r}")
+        directory /= part
+        details = directory.lstat()
+        if (
+            not S_ISDIR(details.st_mode)
+            or getattr(details, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise NotADirectoryError(directory)
+    return directory
+
+
+def create_subdirectory(root: Path, parts: tuple[str, ...], name: str) -> Path:
+    """Create one new directory inside an existing safe parent; never reuse a name."""
+
+    if not _valid_folder_component(name):
+        raise ValueError(f"Invalid folder name: {name!r}")
+    folder = existing_subdirectory(root, parts) / name
+    folder.mkdir()
+    return folder
 
 
 def resolve_contained(path: Path, root: Path) -> Path:
